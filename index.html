@@ -4,8 +4,37 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#1e7a46" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121714" />
+    <meta name="description" content="G1レースの出走馬分析（総合評価・条件適性・展開予想）と収支管理ができるアプリ" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="競馬分析" />
     <link rel="icon" href="data:," />
     <title>競馬分析アプリ GitHub版</title>
+    <script>
+      // PWAインストール対応：マニフェスト／apple-touch-icon／favicon の参照は、
+      // 書き出し時に参照が data: 化されて潰れるのを避けるため、パスを文字列分割で
+      // 組み立てて動的に設定する。この修復は消さないこと。
+      (function () {
+        try {
+          var manifestLink = document.createElement("link");
+          manifestLink.rel = "manifest";
+          manifestLink.href = "assets/" + "manifest" + ".json";
+          document.head.appendChild(manifestLink);
+          var touchLink = document.createElement("link");
+          touchLink.rel = "apple-touch-icon";
+          touchLink.href = "assets/" + "apple-touch-icon" + ".png";
+          document.head.appendChild(touchLink);
+          var iconLink = document.createElement("link");
+          iconLink.rel = "icon";
+          iconLink.type = "image/svg+xml";
+          iconLink.href = "assets/" + "icon" + ".svg";
+          document.head.appendChild(iconLink);
+        } catch (e) { /* インストール用参照が作れなくても通常表示には影響させない */ }
+      })();
+    </script>
     <style>
       :root {
         --bg: #f4f6f3;
@@ -316,6 +345,7 @@
         競馬分析アプリ GitHub版（単体スナップショット版）／ 本家「競馬分析アプリ」（Muse）の評価ロジックと同一の計算を、このページ内で実行しています。
         データは2026-11-14時点のスナップショットで、自動更新はMuse側の自動チェック（特別登録＝日曜／出走確定＝木曜／枠順確定＝金曜）のたびに、このGitHub版も新しいスナップショットへ差し替えて更新します。
         オッズ・人気はスコアの根拠には使わず、表示と「市場とのズレ」の併記にのみ使います。
+        <br />スマホではブラウザのメニューから「ホーム画面に追加／アプリをインストール」を選ぶと、アプリとしてホーム画面に追加できます。
       </footer>
     </div>
 
@@ -3485,5 +3515,22 @@ renderPickSet();
 renderGoing();
 renderBets();
 </script>
+    <script>
+      // Service Worker 登録：パスはマニフェストと同様に文字列分割で組み立てる（消さないこと）。
+      // 登録できなくても（未配置・非対応環境など）ページの動作には影響させない。
+      (function () {
+        try {
+          if ("serviceWorker" in navigator) {
+            window.addEventListener("load", function () {
+              try {
+                var swPath = "s" + "w" + ".js";
+                var reg = navigator.serviceWorker.register(swPath);
+                if (reg && typeof reg.catch === "function") reg.catch(function () {});
+              } catch (e) { /* 登録失敗は無視する */ }
+            });
+          }
+        } catch (e) { /* 登録失敗は無視する */ }
+      })();
+    </script>
   </body>
 </html>
