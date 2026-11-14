@@ -711,6 +711,92 @@
     const info = levelMap?.get(r.id);
     return info ? Math.min(100, Math.round(base * info.factor)) : base;
   }
+  var GOING_ORDER = ["良", "稍重", "重", "不良"];
+  function surfaceNormOf(s) {
+    return s === "ダ" ? "ダート" : s;
+  }
+  function similarityParts(r, race, going) {
+    const surf = r.surface == null ? 0.5 : surfaceNormOf(r.surface) === surfaceNormOf(race.surface) ? 1 : 0;
+    const course = r.racecourse == null ? 0.4 : r.racecourse === race.racecourse ? 1 : 0.15;
+    const tb = distanceBand(race.distance);
+    const rb = distanceBand(r.distance);
+    let dist = 0.5;
+    if (tb != null && rb != null) {
+      const dd = Math.abs(DISTANCE_BANDS.indexOf(tb) - DISTANCE_BANDS.indexOf(rb));
+      dist = dd === 0 ? 1 : dd === 1 ? 0.55 : dd === 2 ? 0.25 : 0.1;
+    }
+    let goingScore = 0.5;
+    const gi = GOING_ORDER.indexOf(going);
+    const ri = GOING_ORDER.indexOf(r.trackCondition ?? "");
+    if (gi >= 0 && ri >= 0) {
+      const gd = Math.abs(gi - ri);
+      goingScore = gd === 0 ? 1 : gd === 1 ? 0.6 : gd === 2 ? 0.3 : 0.12;
+    }
+    let dirScore = 0.5;
+    const td = courseDirection(race.racecourse);
+    const rd = r.racecourse ? courseDirection(r.racecourse) : null;
+    if (td && rd)
+      dirScore = td === rd ? 1 : 0.2;
+    let slopeScore = 0.5;
+    if (r.racecourse) {
+      const ts = slopeTypeOf(race.racecourse);
+      const rs = slopeTypeOf(r.racecourse);
+      slopeScore = ts === rs ? 1 : ts === "flat" || rs === "flat" ? 0.5 : 0.1;
+    }
+    const sim = 0.2 * surf + 0.22 * course + 0.22 * dist + 0.16 * goingScore + 0.1 * dirScore + 0.1 * slopeScore;
+    return { sim: Math.round(sim * 1000) / 1000, surface: surf, course, distance: dist, going: goingScore, direction: dirScore, slope: slopeScore };
+  }
+  function similarityWeight(r, race, going, levelMap) {
+    const parts = similarityParts(r, race, going);
+    const info = levelMap?.get(r.id);
+    const index = info?.index ?? RACE_LEVEL_BASE[levelClass(r.grade)] ?? 20;
+    const boost = 0.75 + 0.5 * (index / 100);
+    let w = Math.min(1, parts.sim * boost);
+    let floor = 0;
+    if (r.finish != null && r.finish <= 3)
+      floor = Math.max(0, Math.min(0.5, (index - 25) / 150));
+    if (floor > w)
+      w = floor;
+    return { sim: parts.sim, weight: Math.round(w * 1000) / 1000, floor: Math.round(floor * 1000) / 1000, index, parts };
+  }
+  function emptyWAgg() {
+    return { starts: 0, wins: 0, seconds: 0, thirds: 0, rawStarts: 0, rawWins: 0, rawSeconds: 0, rawThirds: 0, close: 0 };
+  }
+  function addWeighted(a, r, sw) {
+    a.starts += sw.weight;
+    a.rawStarts += 1;
+    if (sw.sim >= 0.7)
+      a.close += 1;
+    if (r.finish === 1) {
+      a.wins += sw.weight;
+      a.rawWins += 1;
+    } else if (r.finish === 2) {
+      a.seconds += sw.weight;
+      a.rawSeconds += 1;
+    } else if (r.finish === 3) {
+      a.thirds += sw.weight;
+      a.rawThirds += 1;
+    }
+  }
+  function top3CountW(a) {
+    return a.wins + a.seconds + a.thirds;
+  }
+  function shrunkTop3RateW(a, prior) {
+    return (top3CountW(a) + SHRINK_K * prior) / (a.starts + SHRINK_K);
+  }
+  function verdictWeighted(a, prior) {
+    if (a.rawStarts === 0)
+      return "untested";
+    const adj = shrunkTop3RateW(a, prior);
+    const rawRate = a.rawStarts ? (a.rawWins + a.rawSeconds + a.rawThirds) / a.rawStarts : 0;
+    if (a.starts >= 2.4 && adj >= 0.5 && (a.wins >= 0.5 || rawRate >= 0.5))
+      return "good";
+    if (top3CountW(a) > 0.05)
+      return "ok";
+    if (a.starts >= 2.4 && adj >= 0.5)
+      return "ok";
+    return "poor";
+  }
   function emptyAgg() {
     return { starts: 0, wins: 0, seconds: 0, thirds: 0 };
   }
@@ -910,6 +996,33 @@
     const goingAggs = {};
     for (const g of MATCH_GOINGS)
       goingAggs[g] = aggOf((r) => r.trackCondition === g);
+    const simMaps = {};
+    for (const g of MATCH_GOINGS) {
+      const m = new Map;
+      for (const r of results)
+        m.set(r.id, similarityWeight(r, race, g, levelMap));
+      simMaps[g] = m;
+    }
+    const weighted = {};
+    for (const g of MATCH_GOINGS) {
+      const sm = simMaps[g];
+      const wAggOf = (pred) => {
+        const a = emptyWAgg();
+        for (const r of results)
+          if (pred(r))
+            addWeighted(a, r, sm.get(r.id));
+        return a;
+      };
+      weighted[g] = {
+        course: wAggOf((r) => r.racecourse === race.racecourse),
+        surface: wAggOf((r) => r.surface === race.surface || race.surface === "ダート" && r.surface === "ダ"),
+        direction: dir ? wAggOf((r) => courseDirection(r.racecourse) === dir) : null,
+        slope: wAggOf((r) => r.racecourse != null && slopeTypeOf(r.racecourse) === targetSlope),
+        going: wAggOf((r) => r.trackCondition === g),
+        targetBand: wAggOf((r) => distanceBand(r.distance) === band),
+        adjBand: wAggOf((r) => adjBands.includes(distanceBand(r.distance) ?? ""))
+      };
+    }
     return {
       total: results.length,
       course: aggOf((r) => r.racecourse === race.racecourse),
@@ -928,7 +1041,9 @@
       style: mainStyle(results),
       targetHill,
       targetSlope,
-      priorTop3: overallTop3Rate(results)
+      priorTop3: overallTop3Rate(results),
+      weighted,
+      simMaps
     };
   }
   function evalMatch(mc, race, going, levelMode = "adjusted") {
@@ -946,7 +1061,27 @@
       else if (st === "poor")
         risks.push(poorLabel ?? `${riskLabel}で未勝利（${aggText(a)}）`);
     };
-    push("course", `同競馬場（${race.racecourse}）`, mc.course, race.racecourse, `${race.racecourse}で好走なし（${aggText(mc.course)}）`);
+    const fmtEff = (n) => (Math.round(n * 10) / 10).toFixed(1);
+    const useW = levelMode === "adjusted" && mc.weighted != null && mc.weighted[going] != null;
+    const pushC = (key, label, rawA, wA, riskLabel, poorLabel) => {
+      if (!useW || !wA) {
+        push(key, label, rawA, riskLabel, poorLabel);
+        return;
+      }
+      const st = verdictWeighted(wA, mc.priorTop3);
+      let detail = rawA.starts ? aggText(rawA) : "未経験";
+      if (rawA.starts > 0) {
+        detail += `（条件の近さで重み付け：有効${fmtEff(wA.starts)}戦／近い走り${wA.close}走）`;
+        if (rawA.starts <= 2)
+          detail += "（実績僅少・参考値：サンプル割引で判定）";
+      }
+      axes.push({ key, label, status: st, detail });
+      if (st === "untested")
+        risks.push(`${riskLabel}未経験`);
+      else if (st === "poor")
+        risks.push(poorLabel ?? `${riskLabel}で未勝利（${aggText(rawA)}）`);
+    };
+    pushC("course", `同競馬場（${race.racecourse}）`, mc.course, mc.weighted?.[going]?.course, race.racecourse, `${race.racecourse}で好走なし（${aggText(mc.course)}）`);
     if (levelMode === "legacy" || mc.band == null) {
       push("distance", `同距離帯（${mc.band ?? ""}）`, mc.targetBand, `距離${race.distance}m帯`);
     } else {
@@ -959,6 +1094,25 @@
         thirds: tgt.thirds + adj.thirds * 0.5
       };
       let st = levelMode === "adjusted" ? verdictShrunk(combined, mc.priorTop3) : verdict(combined);
+      let wCombined = null;
+      if (useW && mc.weighted?.[going]?.targetBand && mc.weighted?.[going]?.adjBand) {
+        const wt = mc.weighted[going].targetBand;
+        const wa = mc.weighted[going].adjBand;
+        wCombined = {
+          starts: wt.starts + wa.starts * 0.5,
+          wins: wt.wins + wa.wins * 0.5,
+          seconds: wt.seconds + wa.seconds * 0.5,
+          thirds: wt.thirds + wa.thirds * 0.5,
+          rawStarts: wt.rawStarts + wa.rawStarts,
+          rawWins: wt.rawWins + wa.rawWins,
+          rawSeconds: wt.rawSeconds + wa.rawSeconds,
+          rawThirds: wt.rawThirds + wa.rawThirds,
+          close: wt.close + wa.close
+        };
+        st = verdictWeighted(wCombined, mc.priorTop3);
+        if (tgt.starts === 0 && st === "good")
+          st = "ok";
+      }
       let detail;
       if (combined.starts === 0) {
         detail = "未経験";
@@ -973,6 +1127,8 @@
       }
       if (levelMode === "adjusted" && combined.starts > 0 && combined.starts <= 2)
         detail += "（実績僅少・参考値：サンプル割引で判定）";
+      if (wCombined && combined.starts > 0)
+        detail += `（条件の近さで重み付け：有効${fmtEff(wCombined.starts)}戦／近い走り${wCombined.close}走）`;
       axes.push({ key: "distance", label: `同距離帯（${mc.band}）`, status: st, detail });
       if (st === "untested")
         risks.push(`距離${race.distance}m帯未経験`);
@@ -980,7 +1136,7 @@
         risks.push(tgt.starts > 0 ? `距離${race.distance}m帯で好走なし（${aggText(tgt)}）` : `距離${race.distance}m帯は未経験で、隣接帯でも好走なし（${aggText(adj)}）`);
       }
     }
-    push("surface", `同サーフェス（${race.surface}）`, mc.surface, race.surface);
+    pushC("surface", `同サーフェス（${race.surface}）`, mc.surface, mc.weighted?.[going]?.surface, race.surface);
     {
       let st;
       let detail;
@@ -1015,15 +1171,15 @@
       }
     }
     const goingAgg = mc.goingAggs[going] ?? emptyAgg();
-    push("going", `馬場状態（${going}）`, goingAgg, going === "良" ? "良馬場" : `道悪・${going}`, `${going}で好走なし（${aggText(goingAgg)}）`);
+    pushC("going", `馬場状態（${going}）`, goingAgg, mc.weighted?.[going]?.going, going === "良" ? "良馬場" : `道悪・${going}`, `${going}で好走なし（${aggText(goingAgg)}）`);
     const dir = courseDirection(race.racecourse);
     if (dir && mc.direction) {
-      push("direction", `${dir}回り`, mc.direction, `${dir}回り`);
+      pushC("direction", `${dir}回り`, mc.direction, mc.weighted?.[going]?.direction ?? null, `${dir}回り`);
     }
     if (levelMode === "adjusted") {
       const slopeName = mc.targetSlope === "downhill" ? "下り坂コース（淀の坂型）" : mc.targetSlope === "uphill" ? "ゴール前上り坂コース" : "平坦コース";
       const riskName = mc.targetSlope === "downhill" ? "下り坂コース" : mc.targetSlope === "uphill" ? "上り坂コース" : "平坦コース";
-      push("hill", slopeName, mc.slope, riskName);
+      pushC("hill", slopeName, mc.slope, mc.weighted?.[going]?.slope, riskName);
     } else {
       push("hill", mc.targetHill ? "坂のあるコース" : "平坦コース", mc.hillPool, mc.targetHill ? "坂コース" : "平坦コース");
     }
@@ -2378,7 +2534,19 @@
           mainStyle: mainStyle(results),
           daysSinceLastRace: daysSince
         },
-        lastFive: results.slice(0, 5).map((r) => resultOut(r, null, levelMap)),
+        lastFive: results.slice(0, 5).map((r) => {
+          const o = resultOut(r, null, levelMap);
+          const sim = {};
+          const simW = {};
+          for (const g of GOINGS) {
+            const s = mc.simMaps[g].get(r.id);
+            sim[g] = s ? s.sim : null;
+            simW[g] = s ? s.weight : null;
+          }
+          o.sim = sim;
+          o.simW = simW;
+          return o;
+        }),
         matches,
         legacyScores,
         prevScores,
@@ -2404,6 +2572,19 @@
       const resultsAsc = [...resultsDesc].reverse();
       const layoffMap = withLayoff(resultsAsc);
       const overallPrior = overallTop3Rate(resultsDesc);
+      const mcH = prepareMatchContext(resultsDesc, race, levelMap);
+      const attachSim = (o, r) => {
+        const sim = {};
+        const simW = {};
+        for (const g of GOINGS) {
+          const s = mcH.simMaps[g].get(r.id);
+          sim[g] = s ? s.sim : null;
+          simW[g] = s ? s.weight : null;
+        }
+        o.sim = sim;
+        o.simW = simW;
+        return o;
+      };
       const group = (rows) => rows.map((g) => ({ label: g.label, agg: aggOut(g.agg, overallPrior) }));
       const breakdowns = {
         bySurfaceGoing: group(groupBy(resultsDesc, (r) => r.surface ? `${r.surface === "ダ" ? "ダート" : r.surface}・${r.trackCondition ?? "不明"}` : null)),
@@ -2421,7 +2602,7 @@
         byStyle: group(groupBy(resultsDesc, (r) => runningStyle(r), ["逃げ", "先行", "差し", "追込"])),
         byJockey: group(groupBy(resultsDesc, (r) => r.jockey))
       };
-      const bestLevelRuns = [...resultsDesc].map((r) => ({ r, s: correctedLevelScore(r, levelMap) ?? -1 })).sort((a, b) => b.s - a.s).slice(0, 5).map((x) => resultOut(x.r, layoffMap.get(x.r.id), levelMap));
+      const bestLevelRuns = [...resultsDesc].map((r) => ({ r, s: correctedLevelScore(r, levelMap) ?? -1 })).sort((a, b) => b.s - a.s).slice(0, 5).map((x) => attachSim(resultOut(x.r, layoffMap.get(x.r.id), levelMap), x.r));
       horsesOut[horse.id] = {
         horse: {
           id: horse.id,
@@ -2442,7 +2623,7 @@
           profileUrl: horse.profileUrl ?? null,
           mainStyle: mainStyle(resultsDesc)
         },
-        results: resultsDesc.map((r) => resultOut(r, layoffMap.get(r.id), levelMap)),
+        results: resultsDesc.map((r) => attachSim(resultOut(r, layoffMap.get(r.id), levelMap), r)),
         breakdowns,
         traits: computeTraits(resultsDesc),
         pedigree: pedigreeOut(pedigreeOf(horse)),
@@ -2801,11 +2982,15 @@ function renderBasis() {
     <b>状態10点</b>：ローテーション、斤量の変化、馬体重、最終追い切りの動き。「力を出せる状態か」の確認で、主に減点に使います。</p>
     <h3>スコアに入れないもの</h3>
     <p class="small">単勝オッズ・人気は一切スコアに入れず、表示と「市場とのズレ」の併記にのみ使います。血統（父系）は補助情報として各馬詳細に表示し、スコアには入れません。</p>
+    <h3>条件の近さによる重み付け（適性だけに適用）</h3>
+    <p class="small">過去走は全部同じ重さでは数えません。各過去走に、今回の条件（京都・芝2200m外回り・馬場はシナリオで切替）との「条件の近さ」を0〜100%で付け、条件マッチの各軸（同競馬場／同距離帯／芝・ダート／馬場状態／回り／坂）と、総合評価の「条件適性」25点では、近い走りを重く・遠い走りを軽く数えます。近さの内訳は、芝かダートか20%・競馬場の一致22%・距離帯22%（同じ帯100／隣接帯55／2つ先の帯25／それ以外10）・馬場状態の近さ16%（一致100／1段階違い60／2段階30／3段階12）・回りの一致10%・坂タイプの一致10%です。馬場シナリオを切り替えると、馬場の近さが変わるため重みも変わります。</p>
+    <p class="small">レベルも同時に考えます。重みにはレースレベル指数を掛け合わせ（指数が高いレースほど最大で+25%）、3着以内の好走には指数に応じた下限の重み（G1級のレースで約0.42）を保証するので、条件が遠くてもG1など高レベルの好走は薄めすぎません。逆に、低レベルの条件戦で積んだ実績は、条件が遠ければ素直に軽くなります。各軸の判定に使う複勝率は「有効戦数（重みの合計）」ベースでベイズ縮小し、生の戦績表示はそのまま残して「有効◯戦／近い走り◯走」を併記します。各馬詳細では、各走に「条件の近さ」と重みを表示し、近さ75%以上の走には「今回と条件が近い」の印を付けています。</p>
+    <p class="small">この重み付けを入れるのは適性まわりだけです。能力40点・展開・枠15点・近走内容10点・状態10点と、レベル軸のレベル補正方式は変えていません（能力は「条件が違ってもG1で好走した事実は地力の証拠」という考え方を維持）。買い目候補はこの変更では自動で差し替えていません。</p>
     <h3>方式の比較（馬場：${going}）</h3>
     <div class="tblwrap"><table class="basis-tbl">
       <thead><tr><th class="l">馬</th><th class="opt">条件マッチ・旧方式</th><th>条件マッチ・直前方式</th><th>条件マッチ・現在</th><th class="opt">総合評価・直前方式</th><th>総合評価・現在</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
-    <p class="small muted">旧方式＝レベル軸が「重賞出走の有無」だけだった頃の配点。直前方式＝レベル指数と隣接帯の部分点はあるが、サンプル割り引き・坂タイプ別判定・特性フィットの合算が入る前。差がそのまま今回の改修の効果です。</p>`;
+    <p class="small muted">旧方式＝レベル軸が「重賞出走の有無」だけだった頃の配点。直前方式＝レベル指数と隣接帯の部分点はあるが、サンプル割り引き・坂タイプ別判定・特性フィットの合算が入る前。現在の方式には、さらに条件の近さによる重み付け（適性のみ）が入っています。「直前方式」と「現在」の差がそのまま各改修の効果です。</p>`;
 }
 function renderCourse() {
   const cp = S.courseProfile, r = S.race;
@@ -2883,9 +3068,9 @@ function resultRow(r) {
   return `
     <div class="resrow">
       <div class="r1"><span class="fin ${r.finish === 1 ? "win" : ""}">${r.finish != null ? r.finish + "着" : esc(r.finishNote || "—")}</span>
-      <b>${esc(r.raceName)}</b><span class="muted small">${esc(r.raceDate)} ${esc(r.venue)} ${esc(r.surface || "")}${r.distance ?? ""}m ${esc(r.trackCondition || "")}${r.weather ? "・" + esc(r.weather) : ""}</span></div>
+      <b>${esc(r.raceName)}</b>${r.sim && r.sim[going] != null && r.sim[going] >= 0.75 ? ` <span class="tag strong">今回と条件が近い</span>` : ""}<span class="muted small">${esc(r.raceDate)} ${esc(r.venue)} ${esc(r.surface || "")}${r.distance ?? ""}m ${esc(r.trackCondition || "")}${r.weather ? "・" + esc(r.weather) : ""}</span></div>
       <div class="small muted">${r.fieldSize ? r.fieldSize + "頭 " : ""}${r.frame ? r.frame + "枠" : ""}${r.horseNumber ? r.horseNumber + "番 " : ""}${r.jockey ? esc(r.jockey) + " " : ""}${r.weightCarried ? r.weightCarried + "kg " : ""}単勝${r.odds != null ? r.odds.toFixed(1) + "倍" : "—"}${r.popularity ? "（" + r.popularity + "番人気）" : ""} 上り${r.final3f ?? "—"} 着差${esc(r.margin || "—")} 馬体重${r.bodyWeight ?? "—"}${r.bodyWeightDiff != null ? "(" + (r.bodyWeightDiff > 0 ? "+" : "") + r.bodyWeightDiff + ")" : ""}
-      ${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}${r.raceLevel != null ? `・レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.style ? `／脚質 ${esc(r.style)}` : ""}${r.layoff ? `／${esc(r.layoff)}` : ""}</div>
+      ${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}${r.raceLevel != null ? `・レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.sim && r.sim[going] != null ? `／条件の近さ ${Math.round(r.sim[going] * 100)}%（適性の重み${r.simW && r.simW[going] != null ? r.simW[going].toFixed(2) : "—"}）` : ""}${r.style ? `／脚質 ${esc(r.style)}` : ""}${r.layoff ? `／${esc(r.layoff)}` : ""}</div>
       ${extra ? `<div class="small muted">${extra}</div>` : ""}
     </div>`;
 }
@@ -2897,6 +3082,14 @@ function openHorse(id) {
   const axes = m.axes.map((a) => { const [mk, cls] = mark(a.status); return `<div class="axis"><span class="mark ${cls}">${mk}</span><span class="al">${esc(a.label)}</span><span class="ad">${esc(a.detail)}</span></div>`; }).join("");
   const risks = m.risks && m.risks.length ? `<p class="small" style="color:var(--danger)"><b>リスク：</b>${m.risks.map(esc).join("／")}</p>` : "";
   const results = d.results.map(resultRow).join("");
+  const simRuns = [...d.results].filter((r) => r.sim && r.sim[going] != null).sort((a, b) => b.sim[going] - a.sim[going]).slice(0, 5);
+  const simRunsHtml = simRuns.map((r) => `
+    <div class="resrow">
+      <div class="r1"><span class="fin ${r.finish === 1 ? "win" : ""}">${r.finish != null ? r.finish + "着" : esc(r.finishNote || "—")}</span>
+      <b>${esc(r.raceName)}</b><span class="muted small">${esc(r.raceDate)} ${esc(r.venue)} ${esc(r.surface || "")}${r.distance ?? ""}m ${esc(r.trackCondition || "")}</span>
+      <span class="tag ${r.sim[going] >= 0.75 ? "strong" : ""}">近さ ${Math.round(r.sim[going] * 100)}%</span></div>
+      <div class="small muted">適性の集計での重み ${r.simW && r.simW[going] != null ? r.simW[going].toFixed(2) : "—"}${r.raceLevel != null ? `／レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}</div>
+    </div>`).join("");
   const fit = e.traitFits[going];
   $("horse-detail").innerHTML = `
     <div class="card">
@@ -2932,6 +3125,11 @@ function openHorse(id) {
       <p class="small"><b>状態 ${e.proShared.state.score ?? "—"}：</b>${esc(e.proShared.state.detail)}</p>
       <h3>条件マッチの軸別判定（馬場：${going}）</h3>
       ${axes}${risks}
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>今回と条件が近いレース（上位${simRuns.length}走・馬場：${going}）</h2>
+      <p class="small muted">今回の条件（京都・芝2200m・馬場は${going}シナリオ）との近さが高い順です。適性の集計では、この近さとレースレベルを組み合わせた「重み」で各走を数えています（近い走り・レベルの高い好走ほど大きく、遠い走りほど小さく）。</p>
+      ${simRunsHtml || '<p class="small muted">対象データがありません</p>'}
     </div>
     <div class="card" style="margin-top:14px">
       <h2>特性（全成績から算出）</h2>
