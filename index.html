@@ -92,6 +92,27 @@
       .bar > i.mid { background: var(--warn); } .bar > i.low { background: var(--danger); }
       .layerline { display: flex; justify-content: space-between; font-size: .78rem; color: var(--ink2); }
       .layerline b { color: var(--ink); }
+      /* top5: evaluation vs market side-by-side */
+      .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0 6px; }
+      .vbox { border: 1px solid var(--line); border-radius: 8px; padding: 6px 7px; background: var(--chip); min-width: 0; }
+      .vbox.eval { border: 2px solid var(--accent); background: var(--surface); }
+      .vbox .vk { font-size: .68rem; font-weight: 800; color: var(--ink2); white-space: nowrap; }
+      .vbox .vbig { font-size: 1.08rem; font-weight: 900; line-height: 1.25; white-space: nowrap; }
+      .vbox .vsub { font-size: .74rem; color: var(--ink2); white-space: nowrap; }
+      .gapbadge { display: block; text-align: center; font-weight: 800; font-size: .8rem; line-height: 1.4; border-radius: 8px; padding: 6px 7px; margin: 0 0 9px; border: 1px solid var(--line); background: var(--chip); color: var(--ink2); }
+      .gapbadge.value-big { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+      .gapbadge.value { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+      .gapbadge.over-big { background: var(--warn); color: #191104; border-color: var(--warn); }
+      .gapbadge.over { color: var(--danger); border-color: var(--danger); background: var(--surface); }
+      /* comparison table: gap pill */
+      .popcell { font-weight: 900; font-size: .98rem; }
+      .oddcell { font-weight: 800; }
+      .evalrank { display: inline-block; font-size: .72rem; font-weight: 800; color: var(--ink2); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-right: 4px; vertical-align: 2px; }
+      .gappill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: .78rem; font-weight: 800; border: 1px solid var(--line); background: var(--chip); color: var(--ink2); white-space: nowrap; }
+      .gappill.value-big { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+      .gappill.value { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+      .gappill.over-big { background: var(--warn); color: #191104; border-color: var(--warn); }
+      .gappill.over { color: var(--danger); border-color: var(--danger); background: var(--surface); }
       /* tables */
       .tblwrap { overflow-x: auto; }
       table { border-collapse: collapse; width: 100%; font-size: .86rem; }
@@ -175,7 +196,7 @@
       .hidden { display: none !important; }
       footer { margin-top: 26px; color: var(--ink2); font-size: .8rem; }
       @media (max-width: 720px) {
-        .cmp .opt, .basis-tbl .opt { display: none; }
+        .cmp .opt, .cmp .sub2, .basis-tbl .opt { display: none; }
         th, td { padding: 6px 4px; }
         .axis .al { width: 9em; }
         h1 { font-size: 1.28rem; }
@@ -209,6 +230,7 @@
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
           <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
+          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。</p>
           <div class="top5" id="top5"></div>
         </section>
 
@@ -233,12 +255,13 @@
 
         <section class="card">
           <h2>出走馬比較表 <span class="small muted">（行タップで各馬詳細）</span></h2>
+          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。</p>
           <div class="tblwrap">
             <table class="cmp" id="cmp-table">
               <thead><tr>
-                <th class="l">馬</th><th>総合評価</th><th>条件マッチ</th>
+                <th class="l">馬</th><th>総合評価</th><th>市場人気</th><th>単勝</th><th>評価とのズレ</th><th class="sub2">条件マッチ</th>
                 <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th>
-                <th>特性フィット</th><th class="opt">単勝</th><th class="opt">人気</th>
+                <th class="sub2">特性フィット</th>
               </tr></thead>
               <tbody id="cmp-body"></tbody>
             </table>
@@ -2661,22 +2684,46 @@ function sortedByPro() {
 function layerBar(label, v) {
   return `<div class="layerline"><span>${label}</span><b>${v ?? "—"}</b></div><div class="bar"><i class="${barCls(v)}" style="width:${v ?? 0}%"></i></div>`;
 }
+function gapInfo(e, evalRank) {
+  const pop = e.winPopularity;
+  if (pop == null) return { gap: null, kind: "even", pill: "人気 —", line: `評価${evalRank}位 ／ 市場人気は未取得` };
+  const gap = pop - evalRank, abs = Math.abs(gap);
+  if (gap >= 3) return { gap, kind: "value-big", pill: `+${gap} 妙味`, line: `評価${evalRank}位 ／ 市場${pop}番人気（${gap}つ評価が上・妙味）` };
+  if (gap >= 1) return { gap, kind: "value", pill: `+${gap} 評価が上`, line: `評価${evalRank}位 ／ 市場${pop}番人気（評価がやや上）` };
+  if (gap === 0) return { gap, kind: "even", pill: "±0 一致", line: `評価${evalRank}位 ／ 市場${pop}番人気（市場と一致）` };
+  if (gap <= -3) return { gap, kind: "over-big", pill: `${gap} 過剰人気`, line: `評価${evalRank}位 ／ 市場${pop}番人気（${abs}つ市場が上・過剰人気）` };
+  return { gap, kind: "over", pill: `${gap} 市場が上`, line: `評価${evalRank}位 ／ 市場${pop}番人気（市場がやや上）` };
+}
 function renderTop5() {
   $("top5-sub").textContent = `総合評価（馬場：${going}）`;
-  $("top5").innerHTML = sortedByPro().slice(0, 5).map((e, i) => `
+  $("top5").innerHTML = sortedByPro().slice(0, 5).map((e, i) => {
+    const evalRank = i + 1, g = gapInfo(e, evalRank);
+    return `
     <button class="pick-card" data-horse="${e.horse.id}">
-      <span class="rank">${i + 1}位</span>
+      <span class="rank">総合評価 ${evalRank}位</span>
       <span style="float:right"><span class="wb f${e.frame}">${e.horseNumber}</span></span>
       <div class="nm">${esc(e.horse.name)}</div>
-      <div><span class="score" style="color:${bandColor(e.pro[going].total)}">${e.pro[going].total ?? "—"}</span><span class="muted"> 点</span>
-      <span class="small muted">条件マッチ ${e.matches[going].score ?? "—"}</span></div>
+      <div class="vs">
+        <div class="vbox eval">
+          <div class="vk">総合評価</div>
+          <div class="vbig" style="color:${bandColor(e.pro[going].total)}">${e.pro[going].total ?? "—"}<span style="font-size:.78rem"> 点</span></div>
+          <div class="vsub">評価順位 ${evalRank}位</div>
+        </div>
+        <div class="vbox">
+          <div class="vk">市場人気・単勝</div>
+          <div class="vbig">${e.winPopularity != null ? e.winPopularity + "番人気" : "—"}</div>
+          <div class="vsub">単勝 ${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "—"}</div>
+        </div>
+      </div>
+      <span class="gapbadge ${g.kind}">${esc(g.line)}</span>
+      <div class="small muted" style="margin-bottom:6px">条件マッチ ${e.matches[going].score ?? "—"}</div>
       ${layerBar("能力", e.proShared.ability.score)}
       ${layerBar("条件適性", e.pro[going].condition.score)}
       ${layerBar("展開・枠", e.proShared.paceFrame.score)}
       ${layerBar("近走内容", e.proShared.recent.score)}
       ${layerBar("状態", e.proShared.state.score)}
-      ${e.pro[going].marketGap ? `<div class="small" style="color:var(--warn);font-weight:700">${esc(e.pro[going].marketGap)}</div>` : ""}
-    </button>`).join("");
+    </button>`;
+  }).join("");
 }
 function renderOdds() {
   const sorted = [...S.entries].filter((e) => e.winOdds != null).sort((a, b) => (a.winPopularity ?? 99) - (b.winPopularity ?? 99));
@@ -2688,20 +2735,21 @@ function renderOdds() {
     </button>`).join("");
 }
 function renderCmp() {
-  $("cmp-body").innerHTML = sortedByPro().map((e) => {
-    const p = e.pro[going];
+  $("cmp-body").innerHTML = sortedByPro().map((e, i) => {
+    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank);
     return `<tr class="clickable" data-horse="${e.horse.id}">
       <td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b></td>
-      <td class="scorecell" style="color:${bandColor(p.total)}">${p.total ?? "—"}</td>
-      <td>${e.matches[going].score ?? "—"}</td>
+      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}</td>
+      <td class="popcell">${e.winPopularity != null ? e.winPopularity + "番人気" : "—"}</td>
+      <td class="oddcell">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "—"}</td>
+      <td><span class="gappill ${g.kind}">${esc(g.pill)}</span></td>
+      <td class="sub2">${e.matches[going].score ?? "—"}</td>
       <td class="opt">${e.proShared.ability.score ?? "—"}</td>
       <td class="opt">${p.condition.score ?? "—"}</td>
       <td class="opt">${e.proShared.paceFrame.score ?? "—"}</td>
       <td class="opt">${e.proShared.recent.score ?? "—"}</td>
       <td class="opt">${e.proShared.state.score ?? "—"}</td>
-      <td>${p.traitFit ? p.traitFit.score ?? "—" : "—"}</td>
-      <td class="opt">${e.winOdds != null ? e.winOdds.toFixed(1) : "—"}</td>
-      <td class="opt">${e.winPopularity ?? "—"}</td>
+      <td class="sub2">${p.traitFit ? p.traitFit.score ?? "—" : "—"}</td>
     </tr>`;
   }).join("");
 }
