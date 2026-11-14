@@ -116,6 +116,7 @@
         font-weight: 800; font-size: 1.02rem; padding: 12px 22px; min-height: 3.2rem; width: 100%;
       }
       .bigbtn.sub { background: var(--surface); color: var(--accent); border: 2px solid var(--accent); }
+      .bigbtn:disabled { opacity: .55; cursor: default; }
       .btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 6px 14px; font-weight: 700; }
       .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
       .btn.danger { color: var(--danger); border-color: var(--danger); }
@@ -138,6 +139,10 @@
       .fin.win { color: var(--accent); }
       .chips { display: flex; flex-wrap: wrap; gap: 6px; }
       .trait-chip { border: 1px solid var(--line); background: var(--chip); border-radius: 8px; padding: 5px 9px; font-size: .82rem; }
+      .pacelane { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--line); align-items: flex-start; }
+      .pacelane:last-of-type { border-bottom: none; }
+      .pacelane .pl { font-weight: 700; flex: none; width: 6.5em; }
+      .hchip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 5px; font-weight: 700; background: var(--chip); color: var(--ink); }
       .trait-chip b { margin-left: 4px; }
       details.basis summary { cursor: pointer; font-weight: 800; font-size: 1.05rem; padding: 4px 0; }
       /* modal */
@@ -203,13 +208,26 @@
 
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
+          <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
           <div class="top5" id="top5"></div>
         </section>
 
         <section class="card pickset" id="pickset"></section>
 
         <section class="card">
-          <h2>単勝オッズ・人気順ボード</h2>
+          <h2>展開予想（脚質マップ）</h2>
+          <div id="pacemap"></div>
+        </section>
+
+        <section class="card">
+          <h2>単勝オッズ・人気順ボード <span class="small muted" id="odds-asof"></span></h2>
+          <button class="bigbtn" id="odds-refresh">オッズを最新に更新</button>
+          <p class="small hidden" id="odds-status" style="margin-top:8px"></p>
+          <p class="small muted" style="margin-top:8px">
+            実験的機能：押すとブラウザからnetkeibaの最新単勝オッズ（対象：第51回エリザベス女王杯）の取得を試みます。
+            取得経路の都合で、CORS中継サービスを経由する場合があります。中継サービスの状態によっては取得できないことがあり、
+            その場合は表示は変わりません。取得できたオッズはこの端末に保存され、次回表示時も使われます。オッズは総合評価の点数には使っていません。
+          </p>
           <div class="oddsboard" id="oddsboard"></div>
         </section>
 
@@ -218,7 +236,7 @@
           <div class="tblwrap">
             <table class="cmp" id="cmp-table">
               <thead><tr>
-                <th class="l">馬</th><th>プロ評価</th><th>条件マッチ</th>
+                <th class="l">馬</th><th>総合評価</th><th>条件マッチ</th>
                 <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th>
                 <th>特性フィット</th><th class="opt">単勝</th><th class="opt">人気</th>
               </tr></thead>
@@ -1373,7 +1391,7 @@
         ev.rank = i + 1;
         if (x.e.winPopularity != null) {
           const gap = x.e.winPopularity - (i + 1);
-          ev.marketGap = gap >= 3 ? `市場は${x.e.winPopularity}番人気だがプロ評価は${i + 1}位 — 市場より高く評価（ズレ大）` : gap <= -3 ? `市場は${x.e.winPopularity}番人気だがプロ評価は${i + 1}位 — 市場ほどは評価せず（ズレ大）` : `市場は${x.e.winPopularity}番人気、プロ評価は${i + 1}位 — 市場と概ね一致`;
+          ev.marketGap = gap >= 3 ? `市場は${x.e.winPopularity}番人気だが総合評価は${i + 1}位 — 市場より高く評価（ズレ大）` : gap <= -3 ? `市場は${x.e.winPopularity}番人気だが総合評価は${i + 1}位 — 市場ほどは評価せず（ズレ大）` : `市場は${x.e.winPopularity}番人気、総合評価は${i + 1}位 — 市場と概ね一致`;
         }
       });
     }
@@ -2124,6 +2142,11 @@
     bodyWeight: z.number().nullable(),
     bodyWeightDiff: z.number().nullable(),
     winnerName: z.string().nullable(),
+    passing: z.string().nullable(),
+    pace: z.string().nullable(),
+    weather: z.string().nullable(),
+    prize: z.string().nullable(),
+    restriction: z.string().nullable(),
     style: z.string().nullable(),
     layoff: z.string().nullable(),
     levelScore: z.number().nullable(),
@@ -2157,6 +2180,11 @@
       bodyWeight: r.bodyWeight,
       bodyWeightDiff: r.bodyWeightDiff,
       winnerName: r.winnerName,
+      passing: r.passing ?? null,
+      pace: r.pace ?? null,
+      weather: r.weather ?? null,
+      prize: r.prize ?? null,
+      restriction: r.restriction ?? null,
       style: runningStyle(r),
       layoff: layoff ?? null,
       levelScore: correctedLevelScore(r, levelMap),
@@ -2388,6 +2416,7 @@
           breeder: horse.breeder,
           careerSummary: horse.careerSummary,
           netkeibaId: horse.netkeibaId,
+          profileUrl: horse.profileUrl ?? null,
           mainStyle: mainStyle(resultsDesc)
         },
         results: resultsDesc.map((r) => resultOut(r, layoffMap.get(r.id), levelMap)),
@@ -2431,6 +2460,166 @@ const nameOfNum = (num) => { const e = S.entries.find((x) => x.horseNumber === n
 const barCls = (v) => (v == null ? "" : v >= 70 ? "" : v >= 45 ? "mid" : "low");
 const bandColor = (v) => (v == null ? "var(--ink2)" : v >= 70 ? "var(--accent)" : v >= 45 ? "var(--warn)" : "var(--danger)");
 
+/* ---------------- live odds refresh (experimental) ----------------
+   単勝オッズだけをボタンで最新化する実験的機能。取得できたら表示
+   （ボード・比較表・各馬詳細）とデータ時点表示を差し替え、この端末の
+   ローカルストレージに保存して次回表示時も使う。評価スコアには使わない。 */
+const ODDS_RACE_ID = "202608050411";
+const ODDS_KEY = "keiba-live-odds-v1";
+const ODDS_API = `https://race.netkeiba.com/api/api_get_jra_odds.html?race_id=${ODDS_RACE_ID}&type=1&action=update&compress=0`;
+function fmtStamp(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function recomputeMarketGaps() {
+  for (const g of GOINGS) {
+    const ranked = S.entries
+      .filter((e) => !e.scratched && e.pro && e.pro[g] && e.pro[g].total != null)
+      .sort((a, b) => (b.pro[g].total - a.pro[g].total) || ((a.horseNumber ?? 99) - (b.horseNumber ?? 99)));
+    ranked.forEach((e, i) => {
+      e.pro[g].rank = i + 1;
+      if (e.winPopularity != null) {
+        const gap = e.winPopularity - (i + 1);
+        e.pro[g].marketGap = gap >= 3
+          ? `市場は${e.winPopularity}番人気だが総合評価は${i + 1}位 — 市場より高く評価（ズレ大）`
+          : gap <= -3
+            ? `市場は${e.winPopularity}番人気だが総合評価は${i + 1}位 — 市場ほどは評価せず（ズレ大）`
+            : `市場は${e.winPopularity}番人気、総合評価は${i + 1}位 — 市場と概ね一致`;
+      }
+    });
+  }
+}
+function snapshotNoteText() {
+  const r = S.race;
+  return `データ時点：2026-11-14時点のスナップショット（全18頭・全成績${Object.values(S.horses).reduce((a, h) => a + h.results.length, 0)}走を収録）。単勝オッズは${r.oddsAsOf ?? ""}の実オッズ。当日の馬場・取消・最終オッズはJRA公式で確認してください。`;
+}
+function renderSnapshotNote() { const el = $("snapshot-note"); if (el) el.textContent = snapshotNoteText(); }
+function renderOddsMeta() { const el = $("odds-asof"); if (el) el.textContent = S.race.oddsAsOf ? `（${S.race.oddsAsOf}）` : ""; }
+function oddsMapComplete(map) {
+  return !!map && S.entries.every((e) => e.scratched || (map[e.horseNumber] && map[e.horseNumber].win > 0));
+}
+function applyOddsMap(map, label) {
+  for (const e of S.entries) {
+    const o = map[e.horseNumber];
+    if (o) { e.winOdds = o.win; e.winPopularity = o.pop; }
+  }
+  S.race.oddsAsOf = label;
+  recomputeMarketGaps();
+  renderGoing();
+  renderSnapshotNote();
+  renderOddsMeta();
+}
+/* 前回ボタンで取得したオッズが保存されていれば、埋め込みオッズより優先して使う */
+(function applyStoredOdds() {
+  try {
+    const raw = localStorage.getItem(ODDS_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved || saved.raceId !== ODDS_RACE_ID || !saved.odds || !oddsMapComplete(saved.odds)) return;
+    for (const e of S.entries) {
+      const o = saved.odds[e.horseNumber];
+      if (o) { e.winOdds = o.win; e.winPopularity = o.pop; }
+    }
+    if (saved.label) S.race.oddsAsOf = saved.label;
+    recomputeMarketGaps();
+  } catch { /* 保存データが壊れていても埋め込みオッズで表示する */ }
+})();
+function parseOddsPayload(payload) {
+  try {
+    let obj = payload;
+    if (typeof payload === "string") {
+      let t = payload.trim();
+      const m = t.match(/^[A-Za-z_$][\w$.]*\(([\s\S]*)\)\s*;?$/);
+      if (m) t = m[1];
+      obj = JSON.parse(t);
+    }
+    if (obj && typeof obj.contents === "string") return parseOddsPayload(obj.contents);
+    const win = obj && obj.data && obj.data.odds && obj.data.odds["1"];
+    if (!win || typeof win !== "object") return null;
+    const map = {};
+    for (const k of Object.keys(win)) {
+      const num = parseInt(k, 10);
+      const v = win[k];
+      if (!Number.isFinite(num) || !Array.isArray(v)) continue;
+      const w = parseFloat(v[0]);
+      const pop = parseInt(v[2], 10);
+      if (Number.isFinite(w) && w > 0) map[num] = { win: w, pop: Number.isFinite(pop) ? pop : null };
+    }
+    if (Object.values(map).some((o) => o.pop == null)) {
+      Object.values(map).sort((a, b) => a.win - b.win).forEach((o, i) => { o.pop = i + 1; });
+    }
+    return { map, official: obj.data.official_datetime ? String(obj.data.official_datetime) : null };
+  } catch { return null; }
+}
+function fetchJsonp(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const cbName = "__keibaOddsCb" + Math.random().toString(36).slice(2, 10);
+    const script = document.createElement("script");
+    const timer = setTimeout(() => { cleanup(); reject(new Error("timeout")); }, timeoutMs);
+    function cleanup() { clearTimeout(timer); try { delete window[cbName]; } catch { window[cbName] = undefined; } script.remove(); }
+    window[cbName] = (data) => { cleanup(); resolve(data); };
+    script.onerror = () => { cleanup(); reject(new Error("load error")); };
+    script.src = url + "&callback=" + cbName;
+    document.head.appendChild(script);
+  });
+}
+async function fetchTextTimeout(url, timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctl.signal });
+    if (!res.ok) throw new Error("http " + res.status);
+    return await res.text();
+  } finally { clearTimeout(timer); }
+}
+async function tryFetchOdds() {
+  const routes = [
+    () => fetchJsonp(ODDS_API + "&output=jsonp", 12000),
+    () => fetchTextTimeout("https://api.allorigins.win/raw?url=" + encodeURIComponent(ODDS_API), 20000),
+    () => fetchTextTimeout("https://api.allorigins.win/get?url=" + encodeURIComponent(ODDS_API), 20000),
+    () => fetchTextTimeout("https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(ODDS_API), 20000),
+    () => fetchTextTimeout("https://corsproxy.io/?url=" + encodeURIComponent(ODDS_API), 20000),
+  ];
+  for (const route of routes) {
+    try {
+      const parsed = parseOddsPayload(await route());
+      if (parsed && oddsMapComplete(parsed.map)) return parsed;
+    } catch { /* 次の経路を試す */ }
+  }
+  return null;
+}
+let oddsFetching = false;
+async function onOddsRefresh() {
+  if (oddsFetching) return;
+  oddsFetching = true;
+  const btn = $("odds-refresh"), st = $("odds-status");
+  btn.disabled = true;
+  btn.textContent = "取得中…";
+  st.classList.remove("hidden");
+  st.style.color = "";
+  st.style.fontWeight = "";
+  st.textContent = "netkeibaの最新単勝オッズを取得しています…";
+  const parsed = await tryFetchOdds();
+  if (parsed) {
+    const now = new Date();
+    const label = parsed.official ? `${parsed.official.slice(0, 16)}時点（ボタンで取得）` : `${fmtStamp(now)}時点（ボタンで取得）`;
+    applyOddsMap(parsed.map, label);
+    try { localStorage.setItem(ODDS_KEY, JSON.stringify({ raceId: ODDS_RACE_ID, fetchedAt: now.getTime(), label, odds: parsed.map })); } catch { /* 保存できなくても表示は更新する */ }
+    st.style.color = "var(--accent)";
+    st.style.fontWeight = "700";
+    st.textContent = `最新オッズに更新しました（${label}）。取得したオッズはこの端末に保存され、次回表示時も使われます。`;
+  } else {
+    st.style.color = "var(--danger)";
+    st.style.fontWeight = "700";
+    st.textContent = `最新オッズを取得できませんでした。表示は${S.race.oddsAsOf ?? "スナップショット時点"}のオッズのままです。`;
+  }
+  btn.disabled = false;
+  btn.textContent = "オッズを最新に更新";
+  oddsFetching = false;
+}
+$("odds-refresh").addEventListener("click", onOddsRefresh);
+renderOddsMeta();
+
 /* ---------------- race header ---------------- */
 (function renderHead() {
   const r = S.race, cp = S.courseProfile;
@@ -2449,10 +2638,10 @@ const bandColor = (v) => (v == null ? "var(--ink2)" : v >= 70 ? "var(--accent)" 
         <b>このレースのレベル：</b><span style="font-size:1.15rem;font-weight:900;color:var(--accent)">${esc(L.verdict)}</span>
         <span class="muted small">レーティング平均 ${L.avgRating}（公表${L.ratedCount}頭）／最高 ${L.topRating}／上位5頭平均 ${L.top5AvgRating}／G1勝ち馬 ${L.g1Winners}頭／G1複勝馬 ${L.g1Placed}頭／重賞勝ち馬 ${L.gradedWinners}頭</span>
         ${L.returners.length ? `<div class="small muted" style="margin-top:4px">昨年の同レースからの再出走：${L.returners.map((x) => `${esc(x.name)}（${esc(x.edition)} ${x.finish != null ? x.finish + "着" : esc(x.finishNote || "")}）`).join("、")}</div>` : ""}
+        ${L.materials && L.materials.length ? `<div class="small muted" style="margin-top:4px">判定材料：${L.materials.map(esc).join("／")}</div>` : ""}
       </div>`;
   }
-  $("snapshot-note").textContent =
-    `データ時点：2026-11-14時点のスナップショット（全18頭・全成績${Object.values(S.horses).reduce((a, h) => a + h.results.length, 0)}走を収録）。単勝オッズは${r.oddsAsOf ?? ""}の実オッズ。当日の馬場・取消・最終オッズはJRA公式で確認してください。`;
+  renderSnapshotNote();
   $("going-main-flag").textContent = S.proMainGoing ? `主シナリオ：${S.proMainGoing}（雨予報）` : "";
   $("going-btns").innerHTML = GOINGS.map((g) =>
     `<button data-going="${g}" aria-pressed="${g === going}">${g}${g === S.proMainGoing ? "（主）" : ""}</button>`).join("");
@@ -2473,7 +2662,7 @@ function layerBar(label, v) {
   return `<div class="layerline"><span>${label}</span><b>${v ?? "—"}</b></div><div class="bar"><i class="${barCls(v)}" style="width:${v ?? 0}%"></i></div>`;
 }
 function renderTop5() {
-  $("top5-sub").textContent = `プロ評価（馬場：${going}）`;
+  $("top5-sub").textContent = `総合評価（馬場：${going}）`;
   $("top5").innerHTML = sortedByPro().slice(0, 5).map((e, i) => `
     <button class="pick-card" data-horse="${e.horse.id}">
       <span class="rank">${i + 1}位</span>
@@ -2555,13 +2744,18 @@ function renderBasis() {
     <p class="small">各条件軸の判定には調整後複勝率＝（複勝数＋4×全条件複勝率）／（出走数＋4）を使い、戦数が少ない条件は全体の複勝率側へ寄せて判定します。◎は原則3戦以上。戦数2以下は「実績僅少・参考値」と明示します（例：1戦だけの複勝率100%は満点扱いしません）。集計表の生数字はそのまま残し、調整後も併記します。</p>
     <h3>坂の扱い</h3>
     <p class="small">坂は「ゴール前の上り坂／途中の下り坂（淀の坂型）／平坦」に分け、同タイプのコースでの成績で判定します。京都2200m外回りは「下りの淀の坂＋平坦な直線（当日Bコース398.7m）」として扱い、脚質軸には下りで流れが速くなる分岐を持ちます。</p>
-    <h3>プロ評価（階層方式・100点）</h3>
-    <p class="small">能力40（レーティング＋レベル補正）／条件適性25（条件マッチの軸構成を適性として再配点し、コースとの特性フィットを15%合算）／展開・枠15／近走内容10／状態10（ローテ・斤量変化・馬体重・最終追い切り。状態は減点中心）。まず能力で土台を立て、適性と展開で補正し、状態は「出せるかどうか」の確認に使う、というプロの階層に沿った配点です。</p>
+    <h3>総合評価の内訳（プロの見方に沿った階層）</h3>
+    <p class="small">総合評価は100点満点（旧称：プロ評価）。まず「能力」で土台を固め、「条件適性」と「展開・枠」で補正し、「近走内容」と「状態」で最終確認する、という階層で計算します。各層の意味は次のとおりです。<br>
+    <b>能力40点</b>：馬そのものの地力。レーティングと、過去に走ったレースのレベルで判定します。<br>
+    <b>条件適性25点</b>：今回の馬場状態・競馬場・距離・芝かダートかへの向き不向き。コース特性との相性（特性フィット）も少し加味します。<br>
+    <b>展開・枠15点</b>：脚質とレースの流れの合い方、枠順の有利・不利。<br>
+    <b>近走内容10点</b>：最近のレース内容の良し悪し。着順だけでなく、相手の強さや着差まで見ます。<br>
+    <b>状態10点</b>：ローテーション、斤量の変化、馬体重、最終追い切りの動き。「力を出せる状態か」の確認で、主に減点に使います。</p>
     <h3>スコアに入れないもの</h3>
     <p class="small">単勝オッズ・人気は一切スコアに入れず、表示と「市場とのズレ」の併記にのみ使います。血統（父系）は補助情報として各馬詳細に表示し、スコアには入れません。</p>
     <h3>方式の比較（馬場：${going}）</h3>
     <div class="tblwrap"><table class="basis-tbl">
-      <thead><tr><th class="l">馬</th><th class="opt">条件マッチ・旧方式</th><th>条件マッチ・直前方式</th><th>条件マッチ・現在</th><th class="opt">プロ評価・直前方式</th><th>プロ評価・現在</th></tr></thead>
+      <thead><tr><th class="l">馬</th><th class="opt">条件マッチ・旧方式</th><th>条件マッチ・直前方式</th><th>条件マッチ・現在</th><th class="opt">総合評価・直前方式</th><th>総合評価・現在</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
     <p class="small muted">旧方式＝レベル軸が「重賞出走の有無」だけだった頃の配点。直前方式＝レベル指数と隣接帯の部分点はあるが、サンプル割り引き・坂タイプ別判定・特性フィットの合算が入る前。差がそのまま今回の改修の効果です。</p>`;
 }
@@ -2573,6 +2767,9 @@ function renderCourse() {
       <div class="cell"><div class="k">高低差（芝）</div><div class="v">${esc(cp.elevationTurf)}</div></div>
       <div class="cell"><div class="k">坂のタイプ</div><div class="v">${esc(cp.slopeLabel)}</div></div>
       <div class="cell"><div class="k">1コーナーまで</div><div class="v">${esc(cp.firstCorner || "")}</div></div>
+      <div class="cell"><div class="k">回り</div><div class="v">${esc(cp.direction)}</div></div>
+      <div class="cell"><div class="k">直線（ダート）</div><div class="v">${esc(cp.straightDirt)}</div></div>
+      ${cp.dayVariant ? `<div class="cell"><div class="k">当日コース</div><div class="v">${esc(cp.dayVariant)}（直線${cp.dayStraightMeters ?? "—"}m）${cp.dayInsideWorn ? "・内側の消耗あり" : ""}</div></div>` : ""}
     </div>
     <p class="small"><b>坂：</b>${esc(cp.hillNote)}</p>
     <p class="small"><b>ペース・脚質：</b>${esc(cp.paceNote)}</p>
@@ -2580,7 +2777,27 @@ function renderCourse() {
     <p class="small"><b>スタート：</b>${esc(cp.startNote)}</p>
     ${r.courseNote ? `<p class="small"><b>当日の馬場情報：</b>${esc(r.courseNote)}</p>` : ""}`;
 }
-function renderGoing() { renderTop5(); renderOdds(); renderCmp(); renderBasis(); }
+function renderGoing() { renderTop5(); renderOdds(); renderCmp(); renderBasis(); renderPace(); }
+function renderPace() {
+  const order = ["逃げ", "先行", "差し", "追込"];
+  const groups = new Map(order.map((s) => [s, []]));
+  const others = [];
+  for (const e of S.entries) {
+    if (e.scratched) continue;
+    const st = e.horse.mainStyle;
+    if (groups.has(st)) groups.get(st).push(e); else others.push(e);
+  }
+  const chip = (e) => {
+    const last = S.horses[e.horse.id] && S.horses[e.horse.id].results ? S.horses[e.horse.id].results[0] : null;
+    return `<button class="hchip" data-horse="${e.horse.id}"><span class="wb f${e.frame}">${e.horseNumber}</span>${esc(e.horse.name)}${last && last.passing ? `<span class="small muted">前走通過 ${esc(last.passing)}</span>` : ""}</button>`;
+  };
+  const lane = (label, list) => list.length ? `<div class="pacelane"><span class="pl">${label}（${list.length}頭）</span><span class="chips">${[...list].sort((a, b) => a.horseNumber - b.horseNumber).map(chip).join("")}</span></div>` : "";
+  const front = groups.get("逃げ").length + groups.get("先行").length;
+  $("pacemap").innerHTML = `
+    ${order.map((s) => lane(s, groups.get(s))).join("")}
+    ${others.length ? lane("その他・不明", others) : ""}
+    <p class="small muted" style="margin-top:8px">主脚質は全成績の通過順位から判定した各馬の基本の脚質で、上から下が想定する隊列の前後のイメージです。逃げ・先行は計${front}頭。チップには前走の通過順位を併記しました。コース自体のペース傾向は、下の「コース特性：京都 芝2200m（外回り）」のペース・脚質メモもあわせて見てください。</p>`;
+}
 
 /* ---------------- horse detail ---------------- */
 let currentHorse = null;
@@ -2605,6 +2822,25 @@ function aggTable(title, groups) {
   if (!rows) return "";
   return `<h3>${esc(title)}</h3><div class="tblwrap"><table><thead><tr><th class="l">条件</th><th>成績</th><th>勝率</th><th>複勝率</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+function resultRow(r) {
+  const rival = r.winnerName ? (r.finish === 1 ? `2着 ${r.winnerName.replace(/^（/, "").replace(/）$/, "")}` : `勝ち馬 ${r.winnerName}`) : "";
+  const extra = [
+    r.timeText ? "タイム " + r.timeText : "",
+    r.passing ? "通過 " + r.passing : "",
+    r.pace ? "ペース " + r.pace : "",
+    rival,
+    r.prize ? "賞金 " + r.prize + "万円" : "",
+    r.restriction ? r.restriction : "",
+  ].filter(Boolean).map(esc).join("／");
+  return `
+    <div class="resrow">
+      <div class="r1"><span class="fin ${r.finish === 1 ? "win" : ""}">${r.finish != null ? r.finish + "着" : esc(r.finishNote || "—")}</span>
+      <b>${esc(r.raceName)}</b><span class="muted small">${esc(r.raceDate)} ${esc(r.venue)} ${esc(r.surface || "")}${r.distance ?? ""}m ${esc(r.trackCondition || "")}${r.weather ? "・" + esc(r.weather) : ""}</span></div>
+      <div class="small muted">${r.fieldSize ? r.fieldSize + "頭 " : ""}${r.frame ? r.frame + "枠" : ""}${r.horseNumber ? r.horseNumber + "番 " : ""}${r.jockey ? esc(r.jockey) + " " : ""}${r.weightCarried ? r.weightCarried + "kg " : ""}単勝${r.odds != null ? r.odds.toFixed(1) + "倍" : "—"}${r.popularity ? "（" + r.popularity + "番人気）" : ""} 上り${r.final3f ?? "—"} 着差${esc(r.margin || "—")} 馬体重${r.bodyWeight ?? "—"}${r.bodyWeightDiff != null ? "(" + (r.bodyWeightDiff > 0 ? "+" : "") + r.bodyWeightDiff + ")" : ""}
+      ${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}${r.raceLevel != null ? `・レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.style ? `／脚質 ${esc(r.style)}` : ""}${r.layoff ? `／${esc(r.layoff)}` : ""}</div>
+      ${extra ? `<div class="small muted">${extra}</div>` : ""}
+    </div>`;
+}
 function openHorse(id) {
   const e = entryByHorseId(id); if (!e) return;
   const d = S.horses[id]; currentHorse = id;
@@ -2612,19 +2848,13 @@ function openHorse(id) {
   const mark = (s) => s === "good" ? ["◎", "g"] : s === "ok" ? ["○", "o"] : s === "bad" ? ["✕", "b"] : ["△", "n"];
   const axes = m.axes.map((a) => { const [mk, cls] = mark(a.status); return `<div class="axis"><span class="mark ${cls}">${mk}</span><span class="al">${esc(a.label)}</span><span class="ad">${esc(a.detail)}</span></div>`; }).join("");
   const risks = m.risks && m.risks.length ? `<p class="small" style="color:var(--danger)"><b>リスク：</b>${m.risks.map(esc).join("／")}</p>` : "";
-  const results = d.results.map((r) => `
-    <div class="resrow">
-      <div class="r1"><span class="fin ${r.finish === 1 ? "win" : ""}">${r.finish != null ? r.finish + "着" : esc(r.finishNote || "—")}</span>
-      <b>${esc(r.raceName)}</b><span class="muted small">${esc(r.raceDate)} ${esc(r.venue)} ${esc(r.surface || "")}${r.distance ?? ""}m ${esc(r.trackCondition || "")}</span></div>
-      <div class="small muted">${r.fieldSize ? r.fieldSize + "頭 " : ""}${r.jockey ? esc(r.jockey) + " " : ""}${r.weightCarried ? r.weightCarried + "kg " : ""}単勝${r.odds != null ? r.odds.toFixed(1) + "倍" : "—"}${r.popularity ? "（" + r.popularity + "番人気）" : ""} 上り${r.final3f ?? "—"} 着差${esc(r.margin || "—")} 馬体重${r.bodyWeight ?? "—"}${r.bodyWeightDiff != null ? "(" + (r.bodyWeightDiff > 0 ? "+" : "") + r.bodyWeightDiff + ")" : ""}
-      ${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}${r.raceLevel != null ? `・レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.style ? `／脚質 ${esc(r.style)}` : ""}${r.layoff ? `／${esc(r.layoff)}` : ""}</div>
-    </div>`).join("");
+  const results = d.results.map(resultRow).join("");
   const fit = e.traitFits[going];
   $("horse-detail").innerHTML = `
     <div class="card">
       <h1><span class="wb f${e.frame}">${e.horseNumber}</span> ${esc(h.name)} <span class="small muted">${esc(h.sex || "")}${h.birthYear ? (2026 - h.birthYear) + "歳" : ""}</span></h1>
       <div class="kv">
-        <div class="cell"><div class="k">プロ評価（${going}）</div><div class="v" style="color:${bandColor(p.total)}">${p.total ?? "—"}点（${p.rank ?? "—"}位）</div></div>
+        <div class="cell"><div class="k">総合評価（${going}）</div><div class="v" style="color:${bandColor(p.total)}">${p.total ?? "—"}点（${p.rank ?? "—"}位）</div></div>
         <div class="cell"><div class="k">条件マッチ（${going}）</div><div class="v">${m.score ?? "—"}点</div></div>
         <div class="cell"><div class="k">レーティング</div><div class="v">${esc(e.rating || "—")}</div></div>
         <div class="cell"><div class="k">単勝オッズ（${esc(S.race.oddsAsOf || "")}）</div><div class="v">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "—"}（${e.winPopularity ?? "—"}番人気）</div></div>
@@ -2633,14 +2863,20 @@ function openHorse(id) {
         <div class="cell"><div class="k">父</div><div class="v">${esc(h.sire || "—")}</div></div>
         <div class="cell"><div class="k">主脚質</div><div class="v">${esc(h.mainStyle || e.horse.mainStyle || "—")}</div></div>
         <div class="cell"><div class="k">通算成績</div><div class="v">${esc(h.careerSummary || "—")}</div></div>
+        <div class="cell"><div class="k">馬主</div><div class="v">${esc(h.owner || "—")}</div></div>
+        <div class="cell"><div class="k">生産者</div><div class="v">${esc(h.breeder || "—")}</div></div>
+        <div class="cell"><div class="k">毛色</div><div class="v">${esc(h.coat || "—")}</div></div>
+        <div class="cell"><div class="k">生年月日</div><div class="v">${esc(h.birthDate || "—")}</div></div>
+        ${e.note ? `<div class="cell"><div class="k">メモ</div><div class="v">${esc(e.note)}</div></div>` : ""}
         <div class="cell"><div class="k">前走</div><div class="v">${esc(e.previousRace || "—")}</div></div>
         <div class="cell"><div class="k">間隔</div><div class="v">${e.horse.daysSinceLastRace != null ? "中" + e.horse.daysSinceLastRace + "日" : "—"}</div></div>
         <div class="cell"><div class="k">調教後馬体重</div><div class="v">${e.bodyWeight ?? "—"}kg${e.bodyWeightDiff != null ? "（前走比" + (e.bodyWeightDiff > 0 ? "+" : "") + e.bodyWeightDiff + "）" : ""}</div></div>
         <div class="cell"><div class="k">最終追い切り</div><div class="v">${e.trainingGrade ? "評価" + esc(e.trainingGrade) + "「" + esc(e.trainingComment || "") + "」" : "未取得"}</div></div>
-        ${e.jockeyRecord ? `<div class="cell"><div class="k">${esc(e.jockey)}騎手との成績</div><div class="v">${e.jockeyRecord.starts}戦${e.jockeyRecord.wins}勝 [${e.jockeyRecord.wins}-${e.jockeyRecord.seconds}-${e.jockeyRecord.thirds}]</div></div>` : ""}
+        ${e.jockeyRecord ? `<div class="cell"><div class="k">${esc(e.jockey)}騎手との成績</div><div class="v">${e.jockeyRecord.starts}戦${e.jockeyRecord.wins}勝 [${e.jockeyRecord.wins}-${e.jockeyRecord.seconds}-${e.jockeyRecord.thirds}] 複勝率${pct(e.jockeyRecord.top3Rate)}</div></div>` : ""}
       </div>
+      ${h.profileUrl ? `<p class="small"><a href="${esc(h.profileUrl)}" target="_blank" rel="noopener">netkeibaの馬プロフィールを見る</a></p>` : ""}
       ${p.marketGap ? `<p class="small" style="color:var(--warn);font-weight:700">${esc(p.marketGap)}</p>` : ""}
-      <h3>プロ評価の層別根拠</h3>
+      <h3>総合評価の層別根拠</h3>
       <p class="small"><b>能力 ${e.proShared.ability.score ?? "—"}：</b>${esc(e.proShared.ability.detail)}</p>
       <p class="small"><b>条件適性 ${p.condition.score ?? "—"}：</b>${esc(p.condition.detail)}</p>
       <p class="small"><b>展開・枠 ${e.proShared.paceFrame.score ?? "—"}：</b>${esc(e.proShared.paceFrame.detail)}</p>
@@ -2676,8 +2912,16 @@ function openHorse(id) {
       ${aggTable("枠帯", d.breakdowns.byFrameBand)}
       ${aggTable("脚質", d.breakdowns.byStyle)}
       ${aggTable("ローテ（間隔）", d.breakdowns.byLayoff)}
+      ${aggTable("回り", d.breakdowns.byDirection)}
+      ${aggTable("季節", d.breakdowns.bySeason)}
+      ${aggTable("騎手別", d.breakdowns.byJockey)}
       <p class="small muted">複勝率の「調整後」は、戦数が少ない条件を全体の複勝率側へ寄せたベイズ縮小後の値です。戦数2以下には「実績僅少・参考値」を付けています。</p>
     </div>
+    ${d.bestLevelRuns && d.bestLevelRuns.length ? `<div class="card" style="margin-top:14px">
+      <h2>レベル補正の高い走（上位${d.bestLevelRuns.length}走）</h2>
+      <p class="small muted">相手関係とレースのレベルで補正した「レベル補正」が高い順の走です。能力評価の主な材料になります。</p>
+      ${d.bestLevelRuns.map(resultRow).join("")}
+    </div>` : ""}
     <div class="card" style="margin-top:14px">
       <h2>全成績（${d.results.length}走・新しい順）</h2>
       ${results}
