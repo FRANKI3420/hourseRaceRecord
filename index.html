@@ -259,7 +259,7 @@
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
           <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
-          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。</p>
+          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。</p>
           <div class="top5" id="top5"></div>
         </section>
 
@@ -284,17 +284,18 @@
 
         <section class="card">
           <h2>出走馬比較表 <span class="small muted">（行タップで各馬詳細）</span></h2>
-          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。</p>
+          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。順位差が5以上ある馬は、この表の下にずれる理由を明示します。馬場シナリオが稍重以上でその馬場が未経験の馬は、総合評価と条件マッチに幅（レンジ）を併記します。</p>
           <div class="tblwrap">
             <table class="cmp" id="cmp-table">
               <thead><tr>
                 <th class="l">馬</th><th>総合評価</th><th>市場人気</th><th>単勝</th><th>評価とのズレ</th><th class="sub2">条件マッチ</th>
-                <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th>
+                <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th><th class="opt">騎手・調教師</th>
                 <th class="sub2">特性フィット</th>
               </tr></thead>
               <tbody id="cmp-body"></tbody>
             </table>
           </div>
+          <div id="gap-reasons" style="margin-top:12px"></div>
         </section>
 
         <section class="card">
@@ -745,87 +746,62 @@
   function surfaceNormOf(s) {
     return s === "ダ" ? "ダート" : s;
   }
+  var SIM_WEIGHTS = { course: 25, distance: 25, going: 20, surface: 15, direction: 7.5, slope: 7.5 };
   function similarityParts(r, race, going) {
-    const surf = r.surface == null ? 0.5 : surfaceNormOf(r.surface) === surfaceNormOf(race.surface) ? 1 : 0;
-    const course = r.racecourse == null ? 0.4 : r.racecourse === race.racecourse ? 1 : 0.15;
-    const tb = distanceBand(race.distance);
-    const rb = distanceBand(r.distance);
-    let dist = 0.5;
-    if (tb != null && rb != null) {
-      const dd = Math.abs(DISTANCE_BANDS.indexOf(tb) - DISTANCE_BANDS.indexOf(rb));
-      dist = dd === 0 ? 1 : dd === 1 ? 0.55 : dd === 2 ? 0.25 : 0.1;
+    const course = r.racecourse != null && r.racecourse === race.racecourse ? 1 : 0;
+    let distance = 0;
+    const targetBand = distanceBand(race.distance);
+    const runBand = distanceBand(r.distance);
+    if (targetBand != null && runBand != null) {
+      const ti = DISTANCE_BANDS.indexOf(targetBand);
+      const ri = DISTANCE_BANDS.indexOf(runBand);
+      distance = ri === ti ? 1 : Math.abs(ri - ti) === 1 ? 0.5 : 0;
     }
-    let goingScore = 0.5;
-    const gi = GOING_ORDER.indexOf(going);
-    const ri = GOING_ORDER.indexOf(r.trackCondition ?? "");
-    if (gi >= 0 && ri >= 0) {
-      const gd = Math.abs(gi - ri);
-      goingScore = gd === 0 ? 1 : gd === 1 ? 0.6 : gd === 2 ? 0.3 : 0.12;
+    let goingSim = 0.5;
+    const go = GOING_ORDER.indexOf(going);
+    const ro = r.trackCondition != null ? GOING_ORDER.indexOf(r.trackCondition) : -1;
+    if (go >= 0 && ro >= 0) {
+      const d = Math.abs(go - ro);
+      goingSim = d === 0 ? 1 : d === 1 ? 0.6 : d === 2 ? 0.3 : 0.1;
     }
-    let dirScore = 0.5;
-    const td = courseDirection(race.racecourse);
-    const rd = r.racecourse ? courseDirection(r.racecourse) : null;
-    if (td && rd)
-      dirScore = td === rd ? 1 : 0.2;
-    let slopeScore = 0.5;
-    if (r.racecourse) {
-      const ts = slopeTypeOf(race.racecourse);
-      const rs = slopeTypeOf(r.racecourse);
-      slopeScore = ts === rs ? 1 : ts === "flat" || rs === "flat" ? 0.5 : 0.1;
+    const runSurface = r.surface === "ダ" ? "ダート" : r.surface;
+    const targetSurface = race.surface === "ダート" ? "ダート" : "芝";
+    const surface = runSurface == null ? 0.5 : runSurface === targetSurface ? 1 : 0;
+    const runDir = courseDirection(r.racecourse);
+    const targetDir = courseDirection(race.racecourse);
+    const direction = runDir == null || targetDir == null ? 0.5 : runDir === targetDir ? 1 : 0;
+    const runSlope = slopeTypeOf(r.racecourse);
+    const targetSlope = slopeTypeOf(race.racecourse);
+    const slope = runSlope === targetSlope ? 1 : runSlope === "flat" || targetSlope === "flat" ? 0.3 : 0;
+    return { course, distance, going: goingSim, surface, direction, slope };
+  }
+  function conditionSimilarity(r, race, going, opts) {
+    const p = similarityParts(r, race, going);
+    let num = 0;
+    let den = 0;
+    for (const k of Object.keys(SIM_WEIGHTS)) {
+      if (opts?.skipDistance && k === "distance")
+        continue;
+      num += SIM_WEIGHTS[k] * p[k];
+      den += SIM_WEIGHTS[k];
     }
-    const sim = 0.2 * surf + 0.22 * course + 0.22 * dist + 0.16 * goingScore + 0.1 * dirScore + 0.1 * slopeScore;
-    return { sim: Math.round(sim * 1000) / 1000, surface: surf, course, distance: dist, going: goingScore, direction: dirScore, slope: slopeScore };
+    return den > 0 ? num / den : 0;
+  }
+  function evidenceWeight(sim, r, levelMap) {
+    const idx = levelMap?.get(r.id)?.index ?? RACE_LEVEL_BASE[levelClass(r.grade)] ?? 20;
+    const share = idx / 100;
+    let w = sim * (0.55 + 0.45 * share);
+    if (r.finish != null && r.finish <= 3 && levelClass(r.grade) >= 4) {
+      w = Math.max(w, 0.2 + 0.25 * share);
+    }
+    return Math.min(1, Math.max(0, w));
   }
   function similarityWeight(r, race, going, levelMap) {
     const parts = similarityParts(r, race, going);
-    const info = levelMap?.get(r.id);
-    const index = info?.index ?? RACE_LEVEL_BASE[levelClass(r.grade)] ?? 20;
-    const boost = 0.75 + 0.5 * (index / 100);
-    let w = Math.min(1, parts.sim * boost);
-    let floor = 0;
-    if (r.finish != null && r.finish <= 3)
-      floor = Math.max(0, Math.min(0.5, (index - 25) / 150));
-    if (floor > w)
-      w = floor;
-    return { sim: parts.sim, weight: Math.round(w * 1000) / 1000, floor: Math.round(floor * 1000) / 1000, index, parts };
-  }
-  function emptyWAgg() {
-    return { starts: 0, wins: 0, seconds: 0, thirds: 0, rawStarts: 0, rawWins: 0, rawSeconds: 0, rawThirds: 0, close: 0 };
-  }
-  function addWeighted(a, r, sw) {
-    a.starts += sw.weight;
-    a.rawStarts += 1;
-    if (sw.sim >= 0.7)
-      a.close += 1;
-    if (r.finish === 1) {
-      a.wins += sw.weight;
-      a.rawWins += 1;
-    } else if (r.finish === 2) {
-      a.seconds += sw.weight;
-      a.rawSeconds += 1;
-    } else if (r.finish === 3) {
-      a.thirds += sw.weight;
-      a.rawThirds += 1;
-    }
-  }
-  function top3CountW(a) {
-    return a.wins + a.seconds + a.thirds;
-  }
-  function shrunkTop3RateW(a, prior) {
-    return (top3CountW(a) + SHRINK_K * prior) / (a.starts + SHRINK_K);
-  }
-  function verdictWeighted(a, prior) {
-    if (a.rawStarts === 0)
-      return "untested";
-    const adj = shrunkTop3RateW(a, prior);
-    const rawRate = a.rawStarts ? (a.rawWins + a.rawSeconds + a.rawThirds) / a.rawStarts : 0;
-    if (a.starts >= 2.4 && adj >= 0.5 && (a.wins >= 0.5 || rawRate >= 0.5))
-      return "good";
-    if (top3CountW(a) > 0.05)
-      return "ok";
-    if (a.starts >= 2.4 && adj >= 0.5)
-      return "ok";
-    return "poor";
+    const sim = conditionSimilarity(r, race, going);
+    const weight = evidenceWeight(sim, r, levelMap);
+    const index = levelMap?.get(r.id)?.index ?? RACE_LEVEL_BASE[levelClass(r.grade)] ?? 20;
+    return { sim, weight, index, parts };
   }
   function emptyAgg() {
     return { starts: 0, wins: 0, seconds: 0, thirds: 0 };
@@ -1035,22 +1011,32 @@
     }
     const weighted = {};
     for (const g of MATCH_GOINGS) {
-      const sm = simMaps[g];
-      const wAggOf = (pred) => {
-        const a = emptyWAgg();
-        for (const r of results)
-          if (pred(r))
-            addWeighted(a, r, sm.get(r.id));
+      const wAggOf = (pred, weightOf) => {
+        const a = emptyAgg();
+        for (const r of results) {
+          if (!pred(r))
+            continue;
+          const w = weightOf(r);
+          a.starts += w;
+          if (r.finish === 1)
+            a.wins += w;
+          else if (r.finish === 2)
+            a.seconds += w;
+          else if (r.finish === 3)
+            a.thirds += w;
+        }
         return a;
       };
+      const wFull = (r) => evidenceWeight(conditionSimilarity(r, race, g), r, levelMap);
+      const wNoDist = (r) => evidenceWeight(conditionSimilarity(r, race, g, { skipDistance: true }), r, levelMap);
       weighted[g] = {
-        course: wAggOf((r) => r.racecourse === race.racecourse),
-        surface: wAggOf((r) => r.surface === race.surface || race.surface === "ダート" && r.surface === "ダ"),
-        direction: dir ? wAggOf((r) => courseDirection(r.racecourse) === dir) : null,
-        slope: wAggOf((r) => r.racecourse != null && slopeTypeOf(r.racecourse) === targetSlope),
-        going: wAggOf((r) => r.trackCondition === g),
-        targetBand: wAggOf((r) => distanceBand(r.distance) === band),
-        adjBand: wAggOf((r) => adjBands.includes(distanceBand(r.distance) ?? ""))
+        course: wAggOf((r) => r.racecourse === race.racecourse, wFull),
+        surface: wAggOf((r) => r.surface === race.surface || race.surface === "ダート" && r.surface === "ダ", wFull),
+        direction: dir ? wAggOf((r) => courseDirection(r.racecourse) === dir, wFull) : null,
+        slope: wAggOf((r) => r.racecourse != null && slopeTypeOf(r.racecourse) === targetSlope, wFull),
+        going: wAggOf((r) => r.trackCondition === g, wFull),
+        distTarget: wAggOf((r) => distanceBand(r.distance) === band, wNoDist),
+        distAdj: wAggOf((r) => adjBands.includes(distanceBand(r.distance) ?? ""), (r) => 0.5 * wNoDist(r))
       };
     }
     return {
@@ -1079,11 +1065,24 @@
   function evalMatch(mc, race, going, levelMode = "adjusted") {
     const axes = [];
     const risks = [];
-    const push = (key, label, a, riskLabel, poorLabel) => {
-      const st = levelMode === "adjusted" ? verdictShrunk(a, mc.priorTop3) : verdict(a);
+    const wAxes = mc.weighted[going];
+    const push = (key, label, a, riskLabel, poorLabel, weightedAgg) => {
+      let st;
       let detail = a.starts ? aggText(a) : "未経験";
-      if (levelMode === "adjusted" && a.starts > 0 && a.starts <= 2) {
-        detail += "（実績僅少・参考値：サンプル割引で判定）";
+      if (levelMode === "adjusted" && weightedAgg) {
+        st = verdictShrunk(weightedAgg, mc.priorTop3);
+        if (weightedAgg.starts > 0) {
+          detail += `／条件の近い走りを重み付け（有効${weightedAgg.starts.toFixed(1)}走で判定）`;
+          if (weightedAgg.starts <= 2)
+            detail += "（実績僅少・参考値：サンプル割引で判定）";
+        }
+      } else if (levelMode !== "legacy") {
+        st = verdictShrunk(a, mc.priorTop3);
+        if (a.starts > 0 && a.starts <= 2) {
+          detail += "（実績僅少・参考値：サンプル割引で判定）";
+        }
+      } else {
+        st = verdict(a);
       }
       axes.push({ key, label, status: st, detail });
       if (st === "untested")
@@ -1091,27 +1090,7 @@
       else if (st === "poor")
         risks.push(poorLabel ?? `${riskLabel}で未勝利（${aggText(a)}）`);
     };
-    const fmtEff = (n) => (Math.round(n * 10) / 10).toFixed(1);
-    const useW = levelMode === "adjusted" && mc.weighted != null && mc.weighted[going] != null;
-    const pushC = (key, label, rawA, wA, riskLabel, poorLabel) => {
-      if (!useW || !wA) {
-        push(key, label, rawA, riskLabel, poorLabel);
-        return;
-      }
-      const st = verdictWeighted(wA, mc.priorTop3);
-      let detail = rawA.starts ? aggText(rawA) : "未経験";
-      if (rawA.starts > 0) {
-        detail += `（条件の近さで重み付け：有効${fmtEff(wA.starts)}戦／近い走り${wA.close}走）`;
-        if (rawA.starts <= 2)
-          detail += "（実績僅少・参考値：サンプル割引で判定）";
-      }
-      axes.push({ key, label, status: st, detail });
-      if (st === "untested")
-        risks.push(`${riskLabel}未経験`);
-      else if (st === "poor")
-        risks.push(poorLabel ?? `${riskLabel}で未勝利（${aggText(rawA)}）`);
-    };
-    pushC("course", `同競馬場（${race.racecourse}）`, mc.course, mc.weighted?.[going]?.course, race.racecourse, `${race.racecourse}で好走なし（${aggText(mc.course)}）`);
+    push("course", `同競馬場（${race.racecourse}）`, mc.course, race.racecourse, `${race.racecourse}で好走なし（${aggText(mc.course)}）`, wAxes?.course);
     if (levelMode === "legacy" || mc.band == null) {
       push("distance", `同距離帯（${mc.band ?? ""}）`, mc.targetBand, `距離${race.distance}m帯`);
     } else {
@@ -1123,26 +1102,13 @@
         seconds: tgt.seconds + adj.seconds * 0.5,
         thirds: tgt.thirds + adj.thirds * 0.5
       };
-      let st = levelMode === "adjusted" ? verdictShrunk(combined, mc.priorTop3) : verdict(combined);
-      let wCombined = null;
-      if (useW && mc.weighted?.[going]?.targetBand && mc.weighted?.[going]?.adjBand) {
-        const wt = mc.weighted[going].targetBand;
-        const wa = mc.weighted[going].adjBand;
-        wCombined = {
-          starts: wt.starts + wa.starts * 0.5,
-          wins: wt.wins + wa.wins * 0.5,
-          seconds: wt.seconds + wa.seconds * 0.5,
-          thirds: wt.thirds + wa.thirds * 0.5,
-          rawStarts: wt.rawStarts + wa.rawStarts,
-          rawWins: wt.rawWins + wa.rawWins,
-          rawSeconds: wt.rawSeconds + wa.rawSeconds,
-          rawThirds: wt.rawThirds + wa.rawThirds,
-          close: wt.close + wa.close
-        };
-        st = verdictWeighted(wCombined, mc.priorTop3);
-        if (tgt.starts === 0 && st === "good")
-          st = "ok";
-      }
+      const combinedW = levelMode === "adjusted" && wAxes ? {
+        starts: wAxes.distTarget.starts + wAxes.distAdj.starts,
+        wins: wAxes.distTarget.wins + wAxes.distAdj.wins,
+        seconds: wAxes.distTarget.seconds + wAxes.distAdj.seconds,
+        thirds: wAxes.distTarget.thirds + wAxes.distAdj.thirds
+      } : null;
+      let st = combinedW ? verdictShrunk(combinedW, mc.priorTop3) : verdictShrunk(combined, mc.priorTop3);
       let detail;
       if (combined.starts === 0) {
         detail = "未経験";
@@ -1155,10 +1121,13 @@
       } else {
         detail = aggText(tgt);
       }
-      if (levelMode === "adjusted" && combined.starts > 0 && combined.starts <= 2)
+      if (combinedW && combinedW.starts > 0) {
+        detail += `／条件の近い走りを重み付け（有効${combinedW.starts.toFixed(1)}走で判定）`;
+        if (combinedW.starts <= 2)
+          detail += "（実績僅少・参考値：サンプル割引で判定）";
+      } else if (combined.starts > 0 && combined.starts <= 2) {
         detail += "（実績僅少・参考値：サンプル割引で判定）";
-      if (wCombined && combined.starts > 0)
-        detail += `（条件の近さで重み付け：有効${fmtEff(wCombined.starts)}戦／近い走り${wCombined.close}走）`;
+      }
       axes.push({ key: "distance", label: `同距離帯（${mc.band}）`, status: st, detail });
       if (st === "untested")
         risks.push(`距離${race.distance}m帯未経験`);
@@ -1166,7 +1135,7 @@
         risks.push(tgt.starts > 0 ? `距離${race.distance}m帯で好走なし（${aggText(tgt)}）` : `距離${race.distance}m帯は未経験で、隣接帯でも好走なし（${aggText(adj)}）`);
       }
     }
-    pushC("surface", `同サーフェス（${race.surface}）`, mc.surface, mc.weighted?.[going]?.surface, race.surface);
+    push("surface", `同サーフェス（${race.surface}）`, mc.surface, race.surface, undefined, wAxes?.surface);
     {
       let st;
       let detail;
@@ -1201,15 +1170,15 @@
       }
     }
     const goingAgg = mc.goingAggs[going] ?? emptyAgg();
-    pushC("going", `馬場状態（${going}）`, goingAgg, mc.weighted?.[going]?.going, going === "良" ? "良馬場" : `道悪・${going}`, `${going}で好走なし（${aggText(goingAgg)}）`);
+    push("going", `馬場状態（${going}）`, goingAgg, going === "良" ? "良馬場" : `道悪・${going}`, `${going}で好走なし（${aggText(goingAgg)}）`, wAxes?.going);
     const dir = courseDirection(race.racecourse);
     if (dir && mc.direction) {
-      pushC("direction", `${dir}回り`, mc.direction, mc.weighted?.[going]?.direction ?? null, `${dir}回り`);
+      push("direction", `${dir}回り`, mc.direction, `${dir}回り`, undefined, wAxes?.direction);
     }
-    if (levelMode === "adjusted") {
+    if (levelMode !== "legacy") {
       const slopeName = mc.targetSlope === "downhill" ? "下り坂コース（淀の坂型）" : mc.targetSlope === "uphill" ? "ゴール前上り坂コース" : "平坦コース";
       const riskName = mc.targetSlope === "downhill" ? "下り坂コース" : mc.targetSlope === "uphill" ? "上り坂コース" : "平坦コース";
-      pushC("hill", slopeName, mc.slope, mc.weighted?.[going]?.slope, riskName);
+      push("hill", slopeName, mc.slope, riskName, undefined, wAxes?.slope);
     } else {
       push("hill", mc.targetHill ? "坂のあるコース" : "平坦コース", mc.hillPool, mc.targetHill ? "坂コース" : "平坦コース");
     }
@@ -1221,7 +1190,7 @@
       if (style && profile) {
         const shortStraight = ["札幌", "函館", "福島", "小倉", "中山"].includes(race.racecourse);
         const kyotoOuter = race.racecourse === "京都" && (race.courseDetail?.includes("外回り") ?? false);
-        if (levelMode === "adjusted" && kyotoOuter) {
+        if (levelMode !== "legacy" && kyotoOuter) {
           if (style === "差し" || style === "追込") {
             st = "good";
             detail += "。淀の坂の下りで流れが速くなりやすく、平坦な直線で末脚が届きやすい外回りの傾向に合う";
@@ -1530,6 +1499,43 @@
     }
     return { score: den > 0 ? clampScore(num / den * 100) : null, detail: parts.join("／") };
   }
+  function computeJockeyTrainer(entry, horse, results, race, allResults, horseById) {
+    const prior = overallTop3Rate(allResults);
+    const rateScore = (a) => a.starts > 0 ? clampScore(shrunkTop3Rate(a, prior) * 100) : null;
+    const blend = (parts) => {
+      let num = 0;
+      let den = 0;
+      for (const [w, s] of parts) {
+        if (s == null)
+          continue;
+        num += w * s;
+        den += w;
+      }
+      return den > 0 ? Math.round(num / den) : 50;
+    };
+    const aggOfList = (list) => {
+      const a = emptyAgg();
+      for (const r of list)
+        addTo(a, r);
+      return a;
+    };
+    const jockey = entry.jockey;
+    const jAll = allResults.filter((r) => jockey != null && r.jockey === jockey);
+    const combo = aggOfList(results.filter((r) => jockey != null && r.jockey === jockey));
+    const jCourse = aggOfList(jAll.filter((r) => r.racecourse === race.racecourse));
+    const jGraded = aggOfList(jAll.filter((r) => levelClass(r.grade) >= 4));
+    const jRecent = aggOfList([...jAll].sort((a, b) => b.raceDate.localeCompare(a.raceDate)).slice(0, 10));
+    const jockeyScore = blend([[0.4, rateScore(combo)], [0.2, rateScore(jCourse)], [0.2, rateScore(jGraded)], [0.2, rateScore(jRecent)]]);
+    const trainerIds = new Set([...horseById.values()].filter((h) => horse.trainer != null && h.trainer === horse.trainer).map((h) => h.id));
+    const stableResults = allResults.filter((r) => trainerIds.has(r.horseId));
+    const tCourse = aggOfList(stableResults.filter((r) => r.racecourse === race.racecourse));
+    const tRecent = aggOfList([...stableResults].sort((a, b) => b.raceDate.localeCompare(a.raceDate)).slice(0, 15));
+    const trainerScore = blend([[0.5, rateScore(tCourse)], [0.5, rateScore(tRecent)]]);
+    const score = clampScore(jockeyScore * (2 / 3) + trainerScore * (1 / 3));
+    const fmt = (label, a) => a.starts > 0 ? `${label} ${aggText(a)}` : `${label} 実績なし（中立）`;
+    const detail = `騎手${jockeyScore}点（${fmt("コンビ", combo)}／${fmt(`${race.racecourse}での騎手成績`, jCourse)}／${fmt("重賞での騎手成績", jGraded)}／${fmt("騎手の近況10走", jRecent)}）／調教師${trainerScore}点（${fmt(`${race.racecourse}での厩舎成績`, tCourse)}／${fmt("厩舎の近況15走", tRecent)}）・騎手2点＋調教師1点の内訳で合算。各複勝率はベイズ縮小後の値、実績のない項目は中立50点から`;
+    return { score, detail, jockeyScore, trainerScore };
+  }
   function computeProEvaluations(race, entryRows, horseById, resultsByHorse, levelMap, opts) {
     const prevMode = opts?.scoring === "prev";
     const active = entryRows.filter((e) => !e.scratched);
@@ -1537,6 +1543,7 @@
       const s = mainStyle(resultsByHorse.get(e.horseId) ?? []);
       return s === "逃げ" || s === "先行";
     }).length;
+    const allResults = [...resultsByHorse.values()].flat();
     const out = new Map;
     for (const e of entryRows) {
       const horse = horseById.get(e.horseId);
@@ -1548,11 +1555,12 @@
       const ability = computeAbility(results, e.rating, levelMap);
       const recent = computeRecentQuality(resultsDesc, levelMap);
       const state = computeState(e, resultsDesc, race);
+      const jt = computeJockeyTrainer(e, horse, results, race, allResults, horseById);
       const traits = computeTraits(results);
       const lastResult = resultsDesc[0];
       const daysSince = lastResult ? daysBetween(isoDate(lastResult.raceDate), race.raceDate) : null;
       const paceFrame = computePaceFrame(e, results, race, frontCount, active.length, {
-        legacyMode: prevMode,
+        legacyMode: false,
         traits
       });
       const perGoing = {};
@@ -1560,7 +1568,7 @@
         const match = evalMatch(mc, race, g, prevMode ? "prev" : "adjusted");
         const condition = conditionFromMatch(match);
         let traitFit = null;
-        if (!prevMode) {
+        {
           const fit = computeTraitFit(traits, race, g, daysSince, e.frame);
           if (fit.score != null) {
             traitFit = { score: fit.score, live: fit.live.length, dead: fit.dead.length };
@@ -1572,7 +1580,7 @@
             traitFit = { score: null, live: fit.live.length, dead: fit.dead.length };
           }
         }
-        const total = ability.score != null && condition.score != null && paceFrame.score != null && recent.score != null && state.score != null ? clampScore(ability.score * 0.4 + condition.score * 0.25 + paceFrame.score * 0.15 + recent.score * 0.1 + state.score * 0.1) : null;
+        const total = ability.score != null && condition.score != null && paceFrame.score != null && recent.score != null && state.score != null ? clampScore(ability.score * 0.39 + condition.score * 0.24 + paceFrame.score * 0.14 + recent.score * 0.1 + state.score * 0.1 + jt.score * 0.03) : null;
         perGoing[g] = {
           total,
           rank: null,
@@ -1586,7 +1594,8 @@
           ability: { score: ability.score, detail: ability.detail },
           paceFrame: { score: paceFrame.score, detail: paceFrame.detail },
           recent: { score: recent.score, detail: recent.detail },
-          state: { score: state.score, detail: state.detail }
+          state: { score: state.score, detail: state.detail },
+          jockeyTrainer: { score: jt.score, detail: jt.detail }
         },
         byGoing: perGoing
       });
@@ -2504,7 +2513,8 @@
       ability: { score: null, detail: "" },
       paceFrame: { score: null, detail: "" },
       recent: { score: null, detail: "" },
-      state: { score: null, detail: "" }
+      state: { score: null, detail: "" },
+      jockeyTrainer: { score: null, detail: "" }
     };
     const GOINGS = ["良", "稍重", "重", "不良"];
     const entriesOut = [];
@@ -2905,6 +2915,103 @@ function gapInfo(e, evalRank) {
   if (gap <= -3) return { gap, kind: "over-big", pill: `${gap} 過剰人気`, line: `評価${evalRank}位 ／ 市場${pop}番人気（${abs}つ市場が上・過剰人気）` };
   return { gap, kind: "over", pill: `${gap} 市場が上`, line: `評価${evalRank}位 ／ 市場${pop}番人気（市場がやや上）` };
 }
+/* ---------------- wet-going uncertainty + market-gap reasons ---------------- */
+const AXIS_VAL = { good: 1, ok: 0.6, poor: 0.25, untested: 0.1, info: 0.5 };
+const MATCH_AXIS_W = { course: 10, distance: 10, surface: 10, level: 35, going: 15, direction: 5, hill: 5, pace: 10 };
+const COND_AXIS_W = { course: 10, distance: 10, surface: 10, going: 15, direction: 5, hill: 5 };
+const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(n)));
+function scoreFromAxes(axes, wmap) {
+  let num = 0, den = 0;
+  for (const a of axes) { const w = wmap[a.key]; if (w == null) continue; num += w * (AXIS_VAL[a.status] ?? 0.5); den += w; }
+  return den ? Math.round(num / den * 100) : null;
+}
+function wetUncertainty(e) {
+  if (GOINGS.indexOf(going) < 1) return null;
+  const m = e.matches[going];
+  if (!m || !m.axes) return null;
+  const gAxis = m.axes.find((a) => a.key === "going");
+  if (!gAxis || gAxis.status !== "untested") return null;
+  const variant = (st) => m.axes.map((a) => (a.key === "going" ? { key: a.key, label: a.label, status: st, detail: a.detail } : a));
+  const matchLo = scoreFromAxes(variant("poor"), MATCH_AXIS_W);
+  const matchHi = scoreFromAxes(variant("good"), MATCH_AXIS_W);
+  const condOf = (st) => {
+    let s = scoreFromAxes(variant(st), COND_AXIS_W);
+    const fit = e.pro[going].traitFit;
+    if (s != null && fit && fit.score != null) s = clamp100(s * 0.85 + fit.score * 0.15);
+    return s;
+  };
+  const totalOf = (cond) => {
+    const a = e.proShared.ability.score, pf = e.proShared.paceFrame.score, rc = e.proShared.recent.score, st2 = e.proShared.state.score, jt = e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null;
+    if (a == null || cond == null || pf == null || rc == null || st2 == null || jt == null) return null;
+    return clamp100(a * 0.39 + cond * 0.24 + pf * 0.14 + rc * 0.1 + st2 * 0.1 + jt * 0.03);
+  };
+  const totalLo0 = totalOf(condOf("poor"));
+  const curTotal = e.pro[going].total;
+  return { matchLo: m.score != null && matchLo != null ? Math.min(matchLo, m.score) : matchLo, matchHi, totalLo: totalLo0 != null && curTotal != null ? Math.min(totalLo0, curTotal) : totalLo0, totalHi: totalOf(condOf("good")) };
+}
+function wetNoteHtml(e) {
+  const w = wetUncertainty(e);
+  if (!w) return "";
+  return `<div class="small" style="color:var(--warn);font-weight:700;margin-bottom:6px">道悪（${going}）未経験のため不確実：総合評価は${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}点の幅で見る</div>`;
+}
+function wetRangeText(e) {
+  const w = wetUncertainty(e);
+  return w ? `（道悪未経験・幅 ${w.matchLo ?? "—"}〜${w.matchHi ?? "—"}）` : "";
+}
+function layerScores(e) {
+  return [["能力", e.proShared.ability.score], ["条件適性", e.pro[going].condition.score], ["展開・枠", e.proShared.paceFrame.score], ["近走内容", e.proShared.recent.score], ["状態", e.proShared.state.score], ["騎手・調教師", e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null]].filter((x) => x[1] != null);
+}
+function weakestLayers(e, n) { return [...layerScores(e)].sort((a, b) => a[1] - b[1]).slice(0, n); }
+function strongestLayers(e, n) { return [...layerScores(e)].sort((a, b) => b[1] - a[1]).slice(0, n); }
+function weakAxesLabels(e) {
+  return e.matches[going].axes.filter((a) => a.status === "poor" || a.status === "untested").map((a) => a.label);
+}
+function gapReason(e, evalRank) {
+  const pop = e.winPopularity;
+  if (pop == null || evalRank == null) return "";
+  const gap = pop - evalRank;
+  if (Math.abs(gap) < 5) return "";
+  if (gap >= 5) {
+    const strong = strongestLayers(e, 2).map((x) => `${x[0]}${x[1]}点`).join("・");
+    const weak = weakestLayers(e, 1).map((x) => `${x[0]}${x[1]}点`).join("");
+    return `ずれる理由：自前評価を押し上げているのは${strong}で、市場の${pop}番人気という低評価ほど弱くはないと見る。弱点は${weak}で、ここが市場との見解の分かれ目。`;
+  }
+  const weak = weakestLayers(e, 2).map((x) => `${x[0]}${x[1]}点`).join("・");
+  const axes = weakAxesLabels(e).slice(0, 2).join("・");
+  return `ずれる理由：自前評価で点数を下げているのは${weak}${axes ? `で、条件面では${axes}が課題` : ""}。市場は${pop}番人気と高く評価しているが、自前評価ではこの弱点が響いて${evalRank}位にとどまる。`;
+}
+function gapReasonHtml(e, evalRank) {
+  const t = gapReason(e, evalRank);
+  return t ? `<p class="small" style="margin:0 0 6px">${esc(t)}</p>` : "";
+}
+function renderGapReasons() {
+  const el = $("gap-reasons"); if (!el) return;
+  const ranks = rankMap((e) => e.pro[going].total);
+  const list = S.entries.filter((e) => !e.scratched && e.winPopularity != null && Math.abs(e.winPopularity - (ranks.get(e.horse.id) ?? 99)) >= 5)
+    .sort((a, b) => (ranks.get(a.horse.id) ?? 99) - (ranks.get(b.horse.id) ?? 99));
+  if (!list.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<h3 style="margin-top:4px">市場と大きくずれる馬（順位差5以上・馬場：${going}）</h3>` + list.map((e) => {
+    const r = ranks.get(e.horse.id);
+    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（総合評価${r}位・${e.pro[going].total ?? "—"}点／市場${e.winPopularity}番人気）<br>${esc(gapReason(e, r))}</p>`;
+  }).join("");
+}
+function exclusionReason(e, evalRank, pickCount) {
+  const weak = weakestLayers(e, 2).map((x) => `${x[0]}${x[1]}点`).join("・");
+  const axes = weakAxesLabels(e).slice(0, 2).join("・");
+  const wet = wetUncertainty(e) ? `馬場（${going}）は未経験で不確実性が残る点も考慮した。` : "";
+  return `総合評価が${evalRank}位で、候補${pickCount}頭に届かなかった。点数を下げているのは${weak}${axes ? `で、条件面では${axes}が課題` : ""}。${wet}市場人気ほどは評価していない。`;
+}
+function excludedPopularHtml(p) {
+  const ranks = rankMap((e) => e.pro[going].total);
+  const picked = new Set(p.horseIds);
+  const list = S.entries.filter((e) => !e.scratched && e.winPopularity != null && e.winPopularity <= 5 && !picked.has(e.horse.id))
+    .sort((a, b) => a.winPopularity - b.winPopularity);
+  if (!list.length) return "";
+  return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px"><b>人気上位だが買い目候補から外れた馬</b>` + list.map((e) => {
+    const r = ranks.get(e.horse.id);
+    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（市場${e.winPopularity}番人気／総合評価${r}位・${e.pro[going].total ?? "—"}点）<br>除外理由：${esc(exclusionReason(e, r, p.horseIds.length))}</p>`;
+  }).join("") + `</div>`;
+}
 function renderTop5() {
   $("top5-sub").textContent = `総合評価（馬場：${going}）`;
   $("top5").innerHTML = sortedByPro().slice(0, 5).map((e, i) => {
@@ -2927,12 +3034,15 @@ function renderTop5() {
         </div>
       </div>
       <span class="gapbadge ${g.kind}">${esc(g.line)}</span>
-      <div class="small muted" style="margin-bottom:6px">条件マッチ ${e.matches[going].score ?? "—"}</div>
+      ${wetNoteHtml(e)}
+      ${gapReasonHtml(e, evalRank)}
+      <div class="small muted" style="margin-bottom:6px">条件マッチ ${e.matches[going].score ?? "—"}${wetRangeText(e)}</div>
       ${layerBar("能力", e.proShared.ability.score)}
       ${layerBar("条件適性", e.pro[going].condition.score)}
       ${layerBar("展開・枠", e.proShared.paceFrame.score)}
       ${layerBar("近走内容", e.proShared.recent.score)}
       ${layerBar("状態", e.proShared.state.score)}
+      ${layerBar("騎手・調教師", e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null)}
     </button>`;
   }).join("");
 }
@@ -2947,19 +3057,20 @@ function renderOdds() {
 }
 function renderCmp() {
   $("cmp-body").innerHTML = sortedByPro().map((e, i) => {
-    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank);
+    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank), w = wetUncertainty(e);
     return `<tr class="clickable" data-horse="${e.horse.id}">
       <td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b></td>
-      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}</td>
+      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}${w ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">不確実 ${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}</div>` : ""}</td>
       <td class="popcell">${e.winPopularity != null ? e.winPopularity + "番人気" : "—"}</td>
       <td class="oddcell">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "—"}</td>
       <td><span class="gappill ${g.kind}">${esc(g.pill)}</span></td>
-      <td class="sub2">${e.matches[going].score ?? "—"}</td>
+      <td class="sub2">${e.matches[going].score ?? "—"}${w ? `<div class="small muted" style="white-space:normal">幅 ${w.matchLo ?? "—"}〜${w.matchHi ?? "—"}</div>` : ""}</td>
       <td class="opt">${e.proShared.ability.score ?? "—"}</td>
       <td class="opt">${p.condition.score ?? "—"}</td>
       <td class="opt">${e.proShared.paceFrame.score ?? "—"}</td>
       <td class="opt">${e.proShared.recent.score ?? "—"}</td>
       <td class="opt">${e.proShared.state.score ?? "—"}</td>
+      <td class="opt">${e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score ?? "—" : "—"}</td>
       <td class="sub2">${p.traitFit ? p.traitFit.score ?? "—" : "—"}</td>
     </tr>`;
   }).join("");
@@ -2974,7 +3085,8 @@ function renderPickSet() {
     <div class="horses">${p.horseIds.map(chip).join("")}</div>
     ${p.reserveHorseIds.length ? `<div class="small muted">入れ替え候補：${p.reserveHorseIds.map((id) => { const e = entryByHorseId(id); return e ? `${e.horseNumber} ${esc(e.horse.name)}` : ""; }).join("、")}</div>` : ""}
     <div style="margin-top:12px"><button class="bigbtn" id="pick-buy">この買い目で購入を記録する</button></div>
-    <p class="small muted" style="margin-top:8px">押すと、レース・券種・買い目が入った状態で記録フォームが開きます（記録はこの端末にのみ保存されます）。</p>`;
+    <p class="small muted" style="margin-top:8px">押すと、レース・券種・買い目が入った状態で記録フォームが開きます（記録はこの端末にのみ保存されます）。</p>
+    ${excludedPopularHtml(p)}`;
   $("pick-buy").addEventListener("click", () => openBetEditor({ prefillPick: p }));
 }
 function rankMap(scoreOf) {
@@ -3005,17 +3117,24 @@ function renderBasis() {
     <p class="small">坂は「ゴール前の上り坂／途中の下り坂（淀の坂型）／平坦」に分け、同タイプのコースでの成績で判定します。京都2200m外回りは「下りの淀の坂＋平坦な直線（当日Bコース398.7m）」として扱い、脚質軸には下りで流れが速くなる分岐を持ちます。</p>
     <h3>総合評価の内訳（プロの見方に沿った階層）</h3>
     <p class="small">総合評価は100点満点（旧称：プロ評価）。まず「能力」で土台を固め、「条件適性」と「展開・枠」で補正し、「近走内容」と「状態」で最終確認する、という階層で計算します。各層の意味は次のとおりです。<br>
-    <b>能力40点</b>：馬そのものの地力。レーティングと、過去に走ったレースのレベルで判定します。<br>
-    <b>条件適性25点</b>：今回の馬場状態・競馬場・距離・芝かダートかへの向き不向き。コース特性との相性（特性フィット）も少し加味します。<br>
-    <b>展開・枠15点</b>：脚質とレースの流れの合い方、枠順の有利・不利。<br>
+    <b>能力39点</b>：馬そのものの地力。レーティングと、過去に走ったレースのレベルで判定します。<br>
+    <b>条件適性24点</b>：今回の馬場状態・競馬場・距離・芝かダートかへの向き不向き。コース特性との相性（特性フィット）も少し加味します。<br>
+    <b>展開・枠14点</b>：脚質とレースの流れの合い方、枠順の有利・不利。<br>
     <b>近走内容10点</b>：最近のレース内容の良し悪し。着順だけでなく、相手の強さや着差まで見ます。<br>
-    <b>状態10点</b>：ローテーション、斤量の変化、馬体重、最終追い切りの動き。「力を出せる状態か」の確認で、主に減点に使います。</p>
+    <b>状態10点</b>：ローテーション、斤量の変化、馬体重、最終追い切りの動き。「力を出せる状態か」の確認で、主に減点に使います。<br>
+    <b>騎手・調教師3点</b>：騎手2点＋調教師1点の独立要素（内訳は次項）。</p>
+    <h3>騎手・調教師（3点）の内訳</h3>
+    <p class="small">騎手（全体の2点分）：この馬とのコンビ実績（40%）、当該競馬場での騎手成績（20%）、重賞での騎手成績（20%）、騎手の近況10走（20%）を合算。調教師（全体の1点分）：当該競馬場での厩舎成績（50%）、厩舎の近況15走（50%）を合算。各成績は複勝率をベイズ縮小（全出走馬の全成績の複勝率へ寄せる）して0〜100点化し、実績のない項目は中立50点として残りの項目で按分します（データが薄い場合は中立値から）。配点変更の原資は能力40→39・条件適性25→24・展開・枠15→14の各1点で、近走10・状態10は据え置きです。合計は能力39／条件適性24／展開・枠14／近走10／状態10／騎手・調教師3＝100点です。</p>
     <h3>スコアに入れないもの</h3>
     <p class="small">単勝オッズ・人気は一切スコアに入れず、表示と「市場とのズレ」の併記にのみ使います。血統（父系）は補助情報として各馬詳細に表示し、スコアには入れません。</p>
     <h3>条件の近さによる重み付け（適性だけに適用）</h3>
-    <p class="small">過去走は全部同じ重さでは数えません。各過去走に、今回の条件（京都・芝2200m外回り・馬場はシナリオで切替）との「条件の近さ」を0〜100%で付け、条件マッチの各軸（同競馬場／同距離帯／芝・ダート／馬場状態／回り／坂）と、総合評価の「条件適性」25点では、近い走りを重く・遠い走りを軽く数えます。近さの内訳は、芝かダートか20%・競馬場の一致22%・距離帯22%（同じ帯100／隣接帯55／2つ先の帯25／それ以外10）・馬場状態の近さ16%（一致100／1段階違い60／2段階30／3段階12）・回りの一致10%・坂タイプの一致10%です。馬場シナリオを切り替えると、馬場の近さが変わるため重みも変わります。</p>
-    <p class="small">レベルも同時に考えます。重みにはレースレベル指数を掛け合わせ（指数が高いレースほど最大で+25%）、3着以内の好走には指数に応じた下限の重み（G1級のレースで約0.42）を保証するので、条件が遠くてもG1など高レベルの好走は薄めすぎません。逆に、低レベルの条件戦で積んだ実績は、条件が遠ければ素直に軽くなります。各軸の判定に使う複勝率は「有効戦数（重みの合計）」ベースでベイズ縮小し、生の戦績表示はそのまま残して「有効◯戦／近い走り◯走」を併記します。各馬詳細では、各走に「条件の近さ」と重みを表示し、近さ75%以上の走には「今回と条件が近い」の印を付けています。</p>
-    <p class="small">この重み付けを入れるのは適性まわりだけです。能力40点・展開・枠15点・近走内容10点・状態10点と、レベル軸のレベル補正方式は変えていません（能力は「条件が違ってもG1で好走した事実は地力の証拠」という考え方を維持）。買い目候補はこの変更では自動で差し替えていません。</p>
+    <p class="small">過去走は全部同じ重さでは数えません。各過去走に、今回のレース条件との類似度（0〜1）を付けます。合成要素は、競馬場の一致（25）、距離帯の一致・隣接（25。同帯＝1／隣接帯＝0.5／それ以外＝0）、馬場状態の近さ（20。選択中の馬場シナリオとの段差で一致＝1／1段差＝0.6／2段差＝0.3／3段差＝0.1）、芝・ダートの一致（15）、回りの一致（7.5）、坂タイプの一致（7.5。同タイプ＝1／平坦と坂ありの混在＝0.3／上り坂と下り坂＝0）です。条件マッチの各軸（同競馬場／同距離帯／芝・ダート／馬場状態／回り／坂）と、総合評価の「条件適性」24点では、近い走りを重く・遠い走りを軽く数えます。馬場シナリオを切り替えると、馬場の近さが変わるため重みも変わります。</p>
+    <p class="small">レベルも同時に考えます。各軸の集計では、該当する走りをこの類似度で重み付けし、さらにレースレベル指数と組み合わせます（重み＝類似度×（0.55＋0.45×指数÷100））。そのため格の高いレースの証拠は薄めすぎず、G3以上のレースで複勝した走りには、条件が遠くても重みの下限（0.20＋0.25×指数÷100）を保証します（G1の好走はコースが違っても証拠として残すため）。距離軸では距離の近さは従来どおり帯の合算（対象帯×1・隣接帯×0.5）で扱い、重みは距離以外の条件で付けて二重に数えないようにしています。各軸の判定に使う複勝率は「有効戦数（重みの合計）」ベースでベイズ縮小し、生の戦績表示はそのまま残して「有効◯走で判定」を併記します。各馬詳細では、各走に「条件の近さ」と重みを表示し、近さ75%以上の走には「今回と条件が近い」の印を付けています。</p>
+    <p class="small">この重み付けを入れるのは適性まわりだけです。能力39点・展開・枠14点・近走内容10点・状態10点・騎手・調教師3点と、レベル軸のレベル補正方式は変えていません（能力は「条件が違ってもG1で好走した事実は地力の証拠」という考え方を維持）。買い目候補はこの変更では自動で差し替えていません。</p>
+    <h3>道悪未経験の不確実性</h3>
+    <p class="small">馬場シナリオが稍重以上のとき、その馬場状態が未経験の馬は「中立」として扱わず、不確実性として表示します。対象の馬は、総合評価と条件マッチに「道悪未経験のため不確実」と明記し、馬場適性が不向きだった場合から好走した場合までに動きうる点数の幅（レンジ）を併記します。道悪実績のある馬の点数は嵩上げせず、未経験側の不確実性を見える化することで相対差を出します。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します（点数そのものは変えていません）。</p>
+    <h3>市場とのズレの理由</h3>
+    <p class="small">総合評価の順位と市場人気の差が5以上ある馬は、比較表の下に「市場と大きくずれる馬」として、どの層が点数を押し上げ／押し下げているかを文章で明示します。人気上位（5番人気以内）なのに買い目候補に入っていない馬には、候補から外れた理由を買い目候補の欄に必ず併記します。</p>
     <h3>方式の比較（馬場：${going}）</h3>
     <div class="tblwrap"><table class="basis-tbl">
       <thead><tr><th class="l">馬</th><th class="opt">条件マッチ・旧方式</th><th>条件マッチ・直前方式</th><th>条件マッチ・現在</th><th class="opt">総合評価・直前方式</th><th>総合評価・現在</th></tr></thead>
@@ -3040,7 +3159,7 @@ function renderCourse() {
     <p class="small"><b>スタート：</b>${esc(cp.startNote)}</p>
     ${r.courseNote ? `<p class="small"><b>当日の馬場情報：</b>${esc(r.courseNote)}</p>` : ""}`;
 }
-function renderGoing() { renderTop5(); renderOdds(); renderCmp(); renderBasis(); renderPace(); }
+function renderGoing() { renderTop5(); renderOdds(); renderCmp(); renderGapReasons(); renderPickSet(); renderBasis(); renderPace(); }
 function renderPace() {
   const order = ["逃げ", "先行", "差し", "追込"];
   const groups = new Map(order.map((s) => [s, []]));
@@ -3147,12 +3266,15 @@ function openHorse(id) {
       </div>
       ${h.profileUrl ? `<p class="small"><a href="${esc(h.profileUrl)}" target="_blank" rel="noopener">netkeibaの馬プロフィールを見る</a></p>` : ""}
       ${p.marketGap ? `<p class="small" style="color:var(--warn);font-weight:700">${esc(p.marketGap)}</p>` : ""}
+      ${wetNoteHtml(e)}
+      ${gapReasonHtml(e, p.rank)}
       <h3>総合評価の層別根拠</h3>
       <p class="small"><b>能力 ${e.proShared.ability.score ?? "—"}：</b>${esc(e.proShared.ability.detail)}</p>
       <p class="small"><b>条件適性 ${p.condition.score ?? "—"}：</b>${esc(p.condition.detail)}</p>
       <p class="small"><b>展開・枠 ${e.proShared.paceFrame.score ?? "—"}：</b>${esc(e.proShared.paceFrame.detail)}</p>
       <p class="small"><b>近走内容 ${e.proShared.recent.score ?? "—"}：</b>${esc(e.proShared.recent.detail)}</p>
       <p class="small"><b>状態 ${e.proShared.state.score ?? "—"}：</b>${esc(e.proShared.state.detail)}</p>
+      <p class="small"><b>騎手・調教師 ${e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score ?? "—" : "—"}：</b>${esc(e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.detail : "")}</p>
       <h3>条件マッチの軸別判定（馬場：${going}）</h3>
       ${axes}${risks}
     </div>
