@@ -260,7 +260,7 @@
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
           <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
-          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。</p>
+          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。当該競馬場（今回は京都）での出走経験がない馬も同格で、「中立」ではなく不確実性として幅（レンジ）を併記し「コース未経験のため不確実」と明記します。</p>
           <div class="top5" id="top5"></div>
         </section>
 
@@ -285,7 +285,7 @@
 
         <section class="card">
           <h2>出走馬比較表 <span class="small muted">（行タップで各馬詳細）</span></h2>
-          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。順位差が5以上ある馬は、この表の下にずれる理由を明示します。馬場シナリオが稍重以上でその馬場が未経験の馬は、総合評価と条件マッチに幅（レンジ）を併記します。</p>
+          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。順位差が5以上ある馬は、この表の下にずれる理由を明示します。馬場シナリオが稍重以上でその馬場が未経験の馬は、総合評価と条件マッチに幅（レンジ）を併記します。当該競馬場が未経験の馬も、馬場シナリオにかかわらず総合評価と条件マッチに幅（レンジ）を併記します。</p>
           <div class="tblwrap">
             <table class="cmp" id="cmp-table">
               <thead><tr>
@@ -3025,6 +3025,62 @@ function wetRangeText(e) {
   const w = wetUncertainty(e);
   return w ? `（道悪未経験・幅 ${w.matchLo ?? "—"}〜${w.matchHi ?? "—"}）` : "";
 }
+/* ---------------- course (venue) inexperience uncertainty ----------------
+   当該競馬場での出走経験がない馬は「中立」ではなく不確実性として扱う。
+   道悪未経験ルールと同格・同方式：一律の減点はせず、条件マッチのコース軸を
+   最悪（寄与0）〜最良（寄与満点）に振った幅を出し、総合評価にも伝播させる。
+   「経験あり・凡走」（poor判定の実績馬）とは区別し、未経験を凡走以下にはしない。 */
+function scoreFromAxesWith(axes, wmap, key, val) {
+  let num = 0, den = 0;
+  for (const a of axes) { const w = wmap[a.key]; if (w == null) continue; num += w * (a.key === key ? val : (AXIS_VAL[a.status] ?? 0.5)); den += w; }
+  return den ? Math.round(num / den * 100) : null;
+}
+function totalFromCond(e, cond) {
+  const a = e.proShared.ability.score, pf = e.proShared.paceFrame.score, rc = e.proShared.recent.score, st2 = e.proShared.state.score, jt = e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null;
+  if (a == null || cond == null || pf == null || rc == null || st2 == null || jt == null) return null;
+  return clamp100(a * 0.39 + cond * 0.24 + pf * 0.14 + rc * 0.1 + st2 * 0.1 + jt * 0.03);
+}
+function courseUncertainty(e) {
+  const m = e.matches[going];
+  if (!m || !m.axes) return null;
+  const cAxis = m.axes.find((a) => a.key === "course");
+  if (!cAxis || cAxis.status !== "untested") return null;
+  const condOf = (v) => {
+    let s = scoreFromAxesWith(m.axes, COND_AXIS_W, "course", v);
+    const fit = e.pro[going].traitFit;
+    if (s != null && fit && fit.score != null) s = clamp100(s * 0.85 + fit.score * 0.15);
+    return s;
+  };
+  return {
+    matchLo: scoreFromAxesWith(m.axes, MATCH_AXIS_W, "course", 0),
+    matchHi: scoreFromAxesWith(m.axes, MATCH_AXIS_W, "course", 1),
+    totalLo: totalFromCond(e, condOf(0)),
+    totalHi: totalFromCond(e, condOf(1))
+  };
+}
+function courseNoteHtml(e) {
+  const c = courseUncertainty(e);
+  if (!c) return "";
+  return `<div class="small" style="color:var(--warn);font-weight:700;margin-bottom:6px">コース未経験のため不確実（${esc(S.race.racecourse)}での出走経験なし）：総合評価は${c.totalLo ?? "—"}〜${c.totalHi ?? "—"}点の幅で見る</div>`;
+}
+function courseRangeText(e) {
+  const c = courseUncertainty(e);
+  return c ? `（コース未経験・幅 ${c.matchLo ?? "—"}〜${c.matchHi ?? "—"}）` : "";
+}
+function courseCloseCallHtml() {
+  const sorted = sortedByPro().filter((e) => !e.scratched && e.pro[going].total != null);
+  const pairs = [];
+  sorted.forEach((e, i) => {
+    if (!courseUncertainty(e)) return;
+    for (let j = i + 1; j < sorted.length; j++) {
+      const o = sorted[j];
+      if (e.pro[going].total - o.pro[going].total > 3) break;
+      if (!courseUncertainty(o)) pairs.push([e, o]);
+    }
+  });
+  if (!pairs.length) return `<p class="small">現在の馬場シナリオ（${going}）では、コース未経験馬がコース実績のある馬を3点以内の僅差で上回っている組み合わせはありません。</p>`;
+  return `<p class="small">現在の馬場シナリオ（${going}）で、コース未経験馬がコース実績のある馬を3点以内の僅差で上回っている組み合わせです。最終チェックでは、この僅差の相手側にいるコース実績のある馬を優先候補として扱います。</p>` + pairs.map(([e, o]) => `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（${esc(S.race.racecourse)}未経験・総合評価${e.pro[going].total}点）と <span class="wb f${o.frame}">${o.horseNumber}</span> <b>${esc(o.horse.name)}</b>（${esc(S.race.racecourse)}実績あり・${o.pro[going].total}点）は${e.pro[going].total - o.pro[going].total}点差の僅差 → 最終チェックでは${esc(o.horse.name)}を優先</p>`).join("");
+}
 function layerScores(e) {
   return [["能力", e.proShared.ability.score], ["条件適性", e.pro[going].condition.score], ["展開・枠", e.proShared.paceFrame.score], ["近走内容", e.proShared.recent.score], ["状態", e.proShared.state.score], ["騎手・調教師", e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null]].filter((x) => x[1] != null);
 }
@@ -3066,7 +3122,8 @@ function exclusionReason(e, evalRank, pickCount) {
   const weak = weakestLayers(e, 2).map((x) => `${x[0]}${x[1]}点`).join("・");
   const axes = weakAxesLabels(e).slice(0, 2).join("・");
   const wet = wetUncertainty(e) ? `馬場（${going}）は未経験で不確実性が残る点も考慮した。` : "";
-  return `総合評価が${evalRank}位で、候補${pickCount}頭に届かなかった。点数を下げているのは${weak}${axes ? `で、条件面では${axes}が課題` : ""}。${wet}市場人気ほどは評価していない。`;
+  const course = courseUncertainty(e) ? `競馬場（${S.race.racecourse}）は未経験で不確実性が残る点も考慮した。` : "";
+  return `総合評価が${evalRank}位で、候補${pickCount}頭に届かなかった。点数を下げているのは${weak}${axes ? `で、条件面では${axes}が課題` : ""}。${wet}${course}市場人気ほどは評価していない。`;
 }
 function excludedPopularHtml(p) {
   const ranks = rankMap((e) => e.pro[going].total);
@@ -3101,9 +3158,9 @@ function renderTop5() {
         </div>
       </div>
       <span class="gapbadge ${g.kind}">${esc(g.line)}</span>
-      ${wetNoteHtml(e)}
+      ${wetNoteHtml(e)}${courseNoteHtml(e)}
       ${gapReasonHtml(e, evalRank)}
-      <div class="small muted" style="margin-bottom:6px">条件マッチ ${e.matches[going].score ?? "—"}${wetRangeText(e)}</div>
+      <div class="small muted" style="margin-bottom:6px">条件マッチ ${e.matches[going].score ?? "—"}${wetRangeText(e)}${courseRangeText(e)}</div>
       ${layerBar("能力", e.proShared.ability.score)}
       ${layerBar("条件適性", e.pro[going].condition.score)}
       ${layerBar("展開・枠", e.proShared.paceFrame.score)}
@@ -3125,14 +3182,14 @@ function renderOdds() {
 }
 function renderCmp() {
   $("cmp-body").innerHTML = sortedByPro().map((e, i) => {
-    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank), w = wetUncertainty(e);
+    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank), w = wetUncertainty(e), cu = courseUncertainty(e);
     return `<tr class="clickable" data-horse="${e.horse.id}">
       <td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b></td>
-      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}${w ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">不確実 ${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}</div>` : ""}</td>
+      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}${w ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">不確実 ${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}</div>` : ""}${cu ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">コース未経験・不確実 ${cu.totalLo ?? "—"}〜${cu.totalHi ?? "—"}</div>` : ""}</td>
       <td class="popcell">${e.winPopularity != null ? e.winPopularity + "番人気" : "未発表"}</td>
       <td class="oddcell">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "未発表"}</td>
       <td><span class="gappill ${g.kind}">${esc(g.pill)}</span></td>
-      <td class="sub2">${e.matches[going].score ?? "—"}${w ? `<div class="small muted" style="white-space:normal">幅 ${w.matchLo ?? "—"}〜${w.matchHi ?? "—"}</div>` : ""}</td>
+      <td class="sub2">${e.matches[going].score ?? "—"}${w ? `<div class="small muted" style="white-space:normal">幅 ${w.matchLo ?? "—"}〜${w.matchHi ?? "—"}</div>` : ""}${cu ? `<div class="small muted" style="white-space:normal">コース幅 ${cu.matchLo ?? "—"}〜${cu.matchHi ?? "—"}</div>` : ""}</td>
       <td class="opt">${e.proShared.ability.score ?? "—"}</td>
       <td class="opt">${p.condition.score ?? "—"}</td>
       <td class="opt">${e.proShared.paceFrame.score ?? "—"}</td>
@@ -3202,6 +3259,11 @@ function renderBasis() {
     <p class="small">この重み付けを入れるのは適性まわりだけです。能力39点・展開・枠14点・近走内容10点・状態10点・騎手・調教師3点と、レベル軸のレベル補正方式は変えていません（能力は「条件が違ってもG1で好走した事実は地力の証拠」という考え方を維持）。買い目候補はこの変更では自動で差し替えていません。</p>
     <h3>道悪未経験の不確実性</h3>
     <p class="small">馬場シナリオが稍重以上のとき、その馬場状態が未経験の馬は「中立」として扱わず、不確実性として表示します。対象の馬は、総合評価と条件マッチに「道悪未経験のため不確実」と明記し、馬場適性が不向きだった場合から好走した場合までに動きうる点数の幅（レンジ）を併記します。道悪実績のある馬の点数は嵩上げせず、未経験側の不確実性を見える化することで相対差を出します。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します（点数そのものは変えていません）。</p>
+    <h3>コース（競馬場）未経験の不確実性</h3>
+    <p class="small">当該競馬場での出走経験がない馬は、道悪未経験と同格に「中立」として扱わず、不確実性として表示します。対象の馬は、馬場シナリオにかかわらず、総合評価と条件マッチに「コース未経験のため不確実」と明記し、条件マッチのコース軸を最悪（寄与0）から最良（寄与満点）まで振ったときに動きうる点数の幅（レンジ）を併記して、総合評価にもその幅を伝播させます。「経験はあるが凡走した」馬（コース軸がpoor判定の馬）とは区別し、未経験を凡走以下にはしません。コース実績のある馬の点数は嵩上げせず、未経験側の不確実性を見える化することで相対差を出します。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します（点数そのものは変えていません）。類似コース（回り・直線の長さ・坂の有無が近いコース）での実績は、回り軸・坂軸など既存の軸で従来どおり部分的な裏付けとして扱います。</p>
+    <h3>最終チェック：僅差ではコース実績のある馬を優先</h3>
+    <p class="small">最終チェックでは、総合評価が僅差（3点以内）の馬同士を比べるとき、コース未経験の不確実性を抱える馬より、当該競馬場で実績のある馬を優先候補として扱います。一律の減点はせず、表示順位や買い目候補を自動では入れ替えません。</p>
+    ${courseCloseCallHtml()}
     <h3>市場とのズレの理由</h3>
     <p class="small">総合評価の順位と市場人気の差が5以上ある馬は、比較表の下に「市場と大きくずれる馬」として、どの層が点数を押し上げ／押し下げているかを文章で明示します。人気上位（5番人気以内）なのに買い目候補に入っていない馬には、候補から外れた理由を買い目候補の欄に必ず併記します。</p>
     <h3>方式の比較（馬場：${going}）</h3>
@@ -3335,7 +3397,7 @@ function openHorse(id) {
       </div>
       ${h.profileUrl ? `<p class="small"><a href="${esc(h.profileUrl)}" target="_blank" rel="noopener">netkeibaの馬プロフィールを見る</a></p>` : ""}
       ${p.marketGap ? `<p class="small" style="color:var(--warn);font-weight:700">${esc(p.marketGap)}</p>` : ""}
-      ${wetNoteHtml(e)}
+      ${wetNoteHtml(e)}${courseNoteHtml(e)}
       ${gapReasonHtml(e, p.rank)}
       <h3>総合評価の層別根拠</h3>
       <p class="small"><b>能力 ${e.proShared.ability.score ?? "—"}：</b>${esc(e.proShared.ability.detail)}</p>
