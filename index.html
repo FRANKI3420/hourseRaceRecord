@@ -265,7 +265,7 @@
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
           <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
-          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。当該競馬場（今回は京都）での出走経験がない馬も同格で、「中立」ではなく不確実性として幅（レンジ）を併記し「コース未経験のため不確実」と明記します。</p>
+          <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。当該競馬場（今回は京都）での出走経験がない馬も同格で、「中立」ではなく不確実性として幅（レンジ）を併記し「コース未経験のため不確実」と明記したうえで、本スコアにはレンジの最大値を採用します。</p>
           <div class="top5" id="top5"></div>
         </section>
 
@@ -292,7 +292,7 @@
 
         <section class="card">
           <h2>出走馬比較表 <span class="small muted">（行タップで各馬詳細）</span></h2>
-          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。順位差が5以上ある馬は、この表の下にずれる理由を明示します。馬場シナリオが稍重以上でその馬場が未経験の馬は、総合評価と条件マッチに幅（レンジ）を併記します。当該競馬場が未経験の馬も、馬場シナリオにかかわらず総合評価と条件マッチに幅（レンジ）を併記します。</p>
+          <p class="small" style="margin:-4px 0 10px">総合評価のすぐ右が<strong>市場人気（◯番人気）と単勝オッズ</strong>です。「ズレ」は人気順位−評価順位で、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上を表します。順位差が5以上ある馬は、この表の下にずれる理由を明示します。馬場シナリオが稍重以上でその馬場が未経験の馬は、総合評価と条件マッチに幅（レンジ）を併記します。当該競馬場が未経験の馬も、馬場シナリオにかかわらず総合評価と条件マッチに幅（レンジ）を併記し、本スコアにはレンジの最大値を採用します。</p>
           <div class="tblwrap">
             <table class="cmp" id="cmp-table">
               <thead><tr>
@@ -3082,7 +3082,7 @@ renderOddsMeta();
 
 /* ---------------- race sections ---------------- */
 function sortedByPro() {
-  return [...S.entries].sort((a, b) => (b.pro[going].total ?? -1) - (a.pro[going].total ?? -1));
+  return [...S.entries].sort((a, b) => (adoptedTotal(b) ?? -1) - (adoptedTotal(a) ?? -1));
 }
 function layerBar(label, v) {
   return `<div class="layerline"><span>${label}</span><b>${v ?? "—"}</b></div><div class="bar"><i class="${barCls(v)}" style="width:${v ?? 0}%"></i></div>`;
@@ -3142,8 +3142,10 @@ function wetRangeText(e) {
 }
 /* ---------------- course (venue) inexperience uncertainty ----------------
    当該競馬場での出走経験がない馬は「中立」ではなく不確実性として扱う。
-   道悪未経験ルールと同格・同方式：一律の減点はせず、条件マッチのコース軸を
+   道悪未経験ルールと同格に、条件マッチのコース軸を
    最悪（寄与0）〜最良（寄与満点）に振った幅を出し、総合評価にも伝播させる。
+   2026-11-21決定（現行方式のみ）：本スコアにはレンジ最大値（totalHi）を
+   adoptedTotal() で採用する。点推定（totalFromCond 等）の計算式自体は変更しない。
    「経験あり・凡走」（poor判定の実績馬）とは区別し、未経験を凡走以下にはしない。 */
 function scoreFromAxesWith(axes, wmap, key, val) {
   let num = 0, den = 0;
@@ -3173,28 +3175,34 @@ function courseUncertainty(e) {
     totalHi: totalFromCond(e, condOf(1))
   };
 }
+/* 本スコア（2026-11-21決定・現行方式のみ）：コース未経験の馬はレンジ最大値
+   （totalHi）を本スコアとして採用する。それ以外は点推定のまま。 */
+function adoptedTotal(e) {
+  const c = courseUncertainty(e);
+  return c && c.totalHi != null ? c.totalHi : e.pro[going].total;
+}
 function courseNoteHtml(e) {
   const c = courseUncertainty(e);
   if (!c) return "";
-  return `<div class="small" style="color:var(--warn);font-weight:700;margin-bottom:6px">コース未経験のため不確実（${esc(S.race.racecourse)}での出走経験なし）：総合評価は${c.totalLo ?? "—"}〜${c.totalHi ?? "—"}点の幅で見る</div>`;
+  return `<div class="small" style="color:var(--warn);font-weight:700;margin-bottom:6px">コース未経験のため不確実（${esc(S.race.racecourse)}での出走経験なし）：総合評価は${c.totalLo ?? "—"}〜${c.totalHi ?? "—"}点の幅で見て、コース未経験のためレンジ最大値（${c.totalHi ?? "—"}点）を本スコアとして採用</div>`;
 }
 function courseRangeText(e) {
   const c = courseUncertainty(e);
   return c ? `（コース未経験・幅 ${c.matchLo ?? "—"}〜${c.matchHi ?? "—"}）` : "";
 }
 function courseCloseCallHtml() {
-  const sorted = sortedByPro().filter((e) => !e.scratched && e.pro[going].total != null);
+  const sorted = sortedByPro().filter((e) => !e.scratched && adoptedTotal(e) != null);
   const pairs = [];
   sorted.forEach((e, i) => {
     if (!courseUncertainty(e)) return;
     for (let j = i + 1; j < sorted.length; j++) {
       const o = sorted[j];
-      if (e.pro[going].total - o.pro[going].total > 3) break;
+      if (adoptedTotal(e) - adoptedTotal(o) > 3) break;
       if (!courseUncertainty(o)) pairs.push([e, o]);
     }
   });
   if (!pairs.length) return `<p class="small">現在の馬場シナリオ（${going}）では、コース未経験馬がコース実績のある馬を3点以内の僅差で上回っている組み合わせはありません。</p>`;
-  return `<p class="small">現在の馬場シナリオ（${going}）で、コース未経験馬がコース実績のある馬を3点以内の僅差で上回っている組み合わせです。最終チェックでは、この僅差の相手側にいるコース実績のある馬を優先候補として扱います。</p>` + pairs.map(([e, o]) => `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（${esc(S.race.racecourse)}未経験・総合評価${e.pro[going].total}点）と <span class="wb f${o.frame}">${o.horseNumber}</span> <b>${esc(o.horse.name)}</b>（${esc(S.race.racecourse)}実績あり・${o.pro[going].total}点）は${e.pro[going].total - o.pro[going].total}点差の僅差 → 最終チェックでは${esc(o.horse.name)}を優先</p>`).join("");
+  return `<p class="small">現在の馬場シナリオ（${going}）で、コース未経験馬がコース実績のある馬を3点以内の僅差で上回っている組み合わせです。最終チェックでは、この僅差の相手側にいるコース実績のある馬を優先候補として扱います。</p>` + pairs.map(([e, o]) => `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（${esc(S.race.racecourse)}未経験・総合評価${adoptedTotal(e)}点）と <span class="wb f${o.frame}">${o.horseNumber}</span> <b>${esc(o.horse.name)}</b>（${esc(S.race.racecourse)}実績あり・${adoptedTotal(o)}点）は${adoptedTotal(e) - adoptedTotal(o)}点差の僅差 → 最終チェックでは${esc(o.horse.name)}を優先</p>`).join("");
 }
 function layerScores(e) {
   return [["能力", e.proShared.ability.score], ["条件適性", e.pro[going].condition.score], ["展開・枠", e.proShared.paceFrame.score], ["近走内容", e.proShared.recent.score], ["状態", e.proShared.state.score], ["騎手・調教師", e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null]].filter((x) => x[1] != null);
@@ -3224,13 +3232,13 @@ function gapReasonHtml(e, evalRank) {
 }
 function renderGapReasons() {
   const el = $("gap-reasons"); if (!el) return;
-  const ranks = rankMap((e) => e.pro[going].total);
+  const ranks = rankMap((e) => adoptedTotal(e));
   const list = S.entries.filter((e) => !e.scratched && e.winPopularity != null && Math.abs(e.winPopularity - (ranks.get(e.horse.id) ?? 99)) >= 5)
     .sort((a, b) => (ranks.get(a.horse.id) ?? 99) - (ranks.get(b.horse.id) ?? 99));
   if (!list.length) { el.innerHTML = ""; return; }
   el.innerHTML = `<h3 style="margin-top:4px">市場と大きくずれる馬（順位差5以上・馬場：${going}）</h3>` + list.map((e) => {
     const r = ranks.get(e.horse.id);
-    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（総合評価${r}位・${e.pro[going].total ?? "—"}点／市場${e.winPopularity}番人気）<br>${esc(gapReason(e, r))}</p>`;
+    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（総合評価${r}位・${adoptedTotal(e) ?? "—"}点／市場${e.winPopularity}番人気）<br>${esc(gapReason(e, r))}</p>`;
   }).join("");
 }
 function exclusionReason(e, evalRank, pickCount) {
@@ -3241,14 +3249,14 @@ function exclusionReason(e, evalRank, pickCount) {
   return `総合評価が${evalRank}位で、候補${pickCount}頭に届かなかった。点数を下げているのは${weak}${axes ? `で、条件面では${axes}が課題` : ""}。${wet}${course}市場人気ほどは評価していない。`;
 }
 function excludedPopularHtml(p) {
-  const ranks = rankMap((e) => e.pro[going].total);
+  const ranks = rankMap((e) => adoptedTotal(e));
   const picked = new Set(p.horseIds);
   const list = S.entries.filter((e) => !e.scratched && e.winPopularity != null && e.winPopularity <= 5 && !picked.has(e.horse.id))
     .sort((a, b) => a.winPopularity - b.winPopularity);
   if (!list.length) return "";
   return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px"><b>人気上位だが買い目候補から外れた馬</b>` + list.map((e) => {
     const r = ranks.get(e.horse.id);
-    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（市場${e.winPopularity}番人気／総合評価${r}位・${e.pro[going].total ?? "—"}点）<br>除外理由：${esc(exclusionReason(e, r, p.horseIds.length))}</p>`;
+    return `<p class="small" style="margin:6px 0"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b>（市場${e.winPopularity}番人気／総合評価${r}位・${adoptedTotal(e) ?? "—"}点）<br>除外理由：${esc(exclusionReason(e, r, p.horseIds.length))}</p>`;
   }).join("") + `</div>`;
 }
 function renderTop5() {
@@ -3263,7 +3271,7 @@ function renderTop5() {
       <div class="vs">
         <div class="vbox eval">
           <div class="vk">総合評価</div>
-          <div class="vbig" style="color:${bandColor(e.pro[going].total)}">${e.pro[going].total ?? "—"}<span style="font-size:.78rem"> 点</span></div>
+          <div class="vbig" style="color:${bandColor(adoptedTotal(e))}">${adoptedTotal(e) ?? "—"}<span style="font-size:.78rem"> 点</span></div>
           <div class="vsub">評価順位 ${evalRank}位</div>
         </div>
         <div class="vbox">
@@ -3297,10 +3305,10 @@ function renderOdds() {
 }
 function renderCmp() {
   $("cmp-body").innerHTML = sortedByPro().map((e, i) => {
-    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank), w = wetUncertainty(e), cu = courseUncertainty(e);
+    const p = e.pro[going], evalRank = i + 1, g = gapInfo(e, evalRank), w = wetUncertainty(e), cu = courseUncertainty(e), adopted = adoptedTotal(e);
     return `<tr class="clickable" data-horse="${e.horse.id}">
       <td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b></td>
-      <td class="scorecell" style="color:${bandColor(p.total)}"><span class="evalrank">${evalRank}位</span>${p.total ?? "—"}${w ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">不確実 ${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}</div>` : ""}${cu ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">コース未経験・不確実 ${cu.totalLo ?? "—"}〜${cu.totalHi ?? "—"}</div>` : ""}</td>
+      <td class="scorecell" style="color:${bandColor(adopted)}"><span class="evalrank">${evalRank}位</span>${adopted ?? "—"}${w ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">不確実 ${w.totalLo ?? "—"}〜${w.totalHi ?? "—"}</div>` : ""}${cu ? `<div class="small" style="color:var(--warn);font-weight:700;white-space:normal">コース未経験・不確実 ${cu.totalLo ?? "—"}〜${cu.totalHi ?? "—"}</div>` : ""}</td>
       <td class="popcell">${e.winPopularity != null ? e.winPopularity + "番人気" : "未発表"}</td>
       <td class="oddcell">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "未発表"}</td>
       <td><span class="gappill ${g.kind}">${esc(g.pill)}</span></td>
@@ -3376,7 +3384,7 @@ function renderBasis() {
   const curRank = rankMap((e) => e.matches[going].score);
   const prevRank = rankMap((e) => e.prevScores[going]);
   const legRank = rankMap((e) => e.legacyScores[going]);
-  const proCurRank = rankMap((e) => e.pro[going].total);
+  const proCurRank = rankMap((e) => adoptedTotal(e));
   const proPrevRank = rankMap((e) => e.proPrevScores[going]);
   const rows = [...S.entries].sort((a, b) => (curRank.get(a.horse.id) - curRank.get(b.horse.id))).map((e) => `
     <tr><td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span> <b>${esc(e.horse.name)}</b></td>
@@ -3384,7 +3392,7 @@ function renderBasis() {
     <td>${e.prevScores[going] ?? "—"}（${prevRank.get(e.horse.id)}位）</td>
     <td class="scorecell">${e.matches[going].score ?? "—"}（${curRank.get(e.horse.id)}位）</td>
     <td class="opt">${e.proPrevScores[going] ?? "—"}（${proPrevRank.get(e.horse.id)}位）</td>
-    <td class="scorecell">${e.pro[going].total ?? "—"}（${proCurRank.get(e.horse.id)}位）</td></tr>`).join("");
+    <td class="scorecell">${adoptedTotal(e) ?? "—"}（${proCurRank.get(e.horse.id)}位）</td></tr>`).join("");
   $("basis-body").innerHTML = `
     <h3>条件マッチ（100点）の配点</h3>
     <p class="small">レースレベル35／馬場状態15／同競馬場10／同距離帯10／芝・ダート10／脚質×ペース10／回り5／坂5。
@@ -3413,7 +3421,7 @@ function renderBasis() {
     <h3>道悪未経験の不確実性</h3>
     <p class="small">馬場シナリオが稍重以上のとき、その馬場状態が未経験の馬は「中立」として扱わず、不確実性として表示します。対象の馬は、総合評価と条件マッチに「道悪未経験のため不確実」と明記し、馬場適性が不向きだった場合から好走した場合までに動きうる点数の幅（レンジ）を併記します。道悪実績のある馬の点数は嵩上げせず、未経験側の不確実性を見える化することで相対差を出します。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します（点数そのものは変えていません）。</p>
     <h3>コース（競馬場）未経験の不確実性</h3>
-    <p class="small">当該競馬場での出走経験がない馬は、道悪未経験と同格に「中立」として扱わず、不確実性として表示します。対象の馬は、馬場シナリオにかかわらず、総合評価と条件マッチに「コース未経験のため不確実」と明記し、条件マッチのコース軸を最悪（寄与0）から最良（寄与満点）まで振ったときに動きうる点数の幅（レンジ）を併記して、総合評価にもその幅を伝播させます。「経験はあるが凡走した」馬（コース軸がpoor判定の馬）とは区別し、未経験を凡走以下にはしません。コース実績のある馬の点数は嵩上げせず、未経験側の不確実性を見える化することで相対差を出します。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します（点数そのものは変えていません）。類似コース（回り・直線の長さ・坂の有無が近いコース）での実績は、回り軸・坂軸など既存の軸で従来どおり部分的な裏付けとして扱います。</p>
+    <p class="small">当該競馬場での出走経験がない馬は、道悪未経験と同格に「中立」として扱わず、不確実性として表示します。対象の馬は、馬場シナリオにかかわらず、総合評価と条件マッチに「コース未経験のため不確実」と明記し、条件マッチのコース軸を最悪（寄与0）から最良（寄与満点）まで振ったときに動きうる点数の幅（レンジ）を併記して、総合評価にもその幅を伝播させます。コース未経験の馬は不確実性としてレンジ表示し、本スコアにはレンジの最大値を採用します（2026-11-21決定・現行方式のみに適用し、点推定そのものの計算式は変えていません）。「経験はあるが凡走した」馬（コース軸がpoor判定の馬）とは区別し、未経験を凡走以下にはしません。このルールは候補に選んだ馬・選ばなかった馬を問わず、全頭に同じ基準で適用します。類似コース（回り・直線の長さ・坂の有無が近いコース）での実績は、回り軸・坂軸など既存の軸で従来どおり部分的な裏付けとして扱います。</p>
     <h3>最終チェック：僅差ではコース実績のある馬を優先</h3>
     <p class="small">最終チェックでは、総合評価が僅差（3点以内）の馬同士を比べるとき、コース未経験の不確実性を抱える馬より、当該競馬場で実績のある馬を優先候補として扱います。一律の減点はせず、表示順位や買い目候補を自動では入れ替えません。</p>
     ${courseCloseCallHtml()}
@@ -3524,11 +3532,13 @@ function openHorse(id) {
       <div class="small muted">適性の集計での重み ${r.simW && r.simW[going] != null ? r.simW[going].toFixed(2) : "—"}${r.raceLevel != null ? `／レースレベル指数 ${r.raceLevel}（${esc(r.raceLevelBand || "")}）` : ""}${r.levelScore != null ? `／レベル補正 ${r.levelScore}` : ""}</div>
     </div>`).join("");
   const fit = e.traitFits[going];
+  const adoptedScore = adoptedTotal(e);
+  const adoptedRank = sortedByPro().findIndex((x) => x.horse.id === e.horse.id) + 1;
   $("horse-detail").innerHTML = `
     <div class="card">
       <h1><span class="wb f${e.frame}">${e.horseNumber}</span> ${esc(h.name)} <span class="small muted">${esc(h.sex || "")}${h.birthYear ? (2026 - h.birthYear) + "歳" : ""}</span></h1>
       <div class="kv">
-        <div class="cell"><div class="k">総合評価（${going}）</div><div class="v" style="color:${bandColor(p.total)}">${p.total ?? "—"}点（${p.rank ?? "—"}位）</div></div>
+        <div class="cell"><div class="k">総合評価（${going}）</div><div class="v" style="color:${bandColor(adoptedScore)}">${adoptedScore ?? "—"}点（${adoptedRank || "—"}位）</div></div>
         <div class="cell"><div class="k">条件マッチ（${going}）</div><div class="v">${m.score ?? "—"}点</div></div>
         <div class="cell"><div class="k">レーティング</div><div class="v">${esc(e.rating || "—")}</div></div>
         <div class="cell"><div class="k">単勝オッズ（${esc(S.race.oddsAsOf || "未発表")}）</div><div class="v">${e.winOdds != null ? e.winOdds.toFixed(1) + "倍" : "未発表"}（${e.winPopularity != null ? e.winPopularity + "番人気" : "未発表"}）</div></div>
@@ -3553,7 +3563,7 @@ function openHorse(id) {
       ${e.frameMemo ? `<p class="small"><b>枠の相性：</b>${esc(e.frameMemo)}</p>` : ""}
       ${p.marketGap ? `<p class="small" style="color:var(--warn);font-weight:700">${esc(p.marketGap)}</p>` : ""}
       ${wetNoteHtml(e)}${courseNoteHtml(e)}
-      ${gapReasonHtml(e, p.rank)}
+      ${gapReasonHtml(e, adoptedRank)}
       <h3>総合評価の層別根拠</h3>
       <p class="small"><b>能力 ${e.proShared.ability.score ?? "—"}：</b>${esc(e.proShared.ability.detail)}</p>
       <p class="small"><b>条件適性 ${p.condition.score ?? "—"}：</b>${esc(p.condition.detail)}</p>
@@ -3632,6 +3642,7 @@ document.addEventListener("click", (ev) => {
 
 /* ================= bets (localStorage) ================= */
 const BETS_KEY = "keiba-bets-v1";
+let lastAutoSettledCount = 0;
 function loadBets() {
   try {
     const raw = localStorage.getItem(BETS_KEY);
@@ -3689,6 +3700,11 @@ function renderBets() {
   const all = loadBets();
   const st = computeStats(all);
   const t = st.totals;
+  const amsg = $("bets-msg");
+  if (amsg && lastAutoSettledCount > 0) {
+    amsg.textContent = `公式結果により${lastAutoSettledCount}件を自動で精算しました（対象の記録には「自動精算」の印が付いています）`;
+    amsg.classList.remove("hidden");
+  }
   const cell = (k, v, cls) => `<div class="cell"><div class="k">${k}</div><div class="v ${cls || ""}">${v}</div></div>`;
   $("bet-stats").innerHTML =
     cell("累計購入（確定分）", fmtYen(t.purchase)) +
@@ -3736,6 +3752,7 @@ function renderBets() {
       <div class="hd"><b>${esc(b.raceName)}</b><span class="small muted">${esc(b.raceDate || "")}</span>
       <span class="tag">${esc(b.betType)}・${esc(b.method)}</span>
       ${b.label ? `<span class="tag">${esc(b.label)}</span>` : ""}
+      ${b.autoSettled ? `<span class="tag">自動精算</span>` : ""}
       <span class="status ${b.status}" style="margin-left:auto">${b.status === "won" ? "的中" : b.status === "lost" ? "不的中" : "未確定"}</span></div>
       <div style="margin-top:6px">${b.selections.map((c) => `<span class="combo">${c.map((n) => n + (nameOfNum(n) ? " " + esc(nameOfNum(n)) : "")).join(" - ")}</span>`).join("")}</div>
       <div class="small" style="margin-top:6px">${b.points}点 × ${fmtYen(b.amountPerPoint)} ＝ <b>${fmtYen(b.totalAmount)}</b>
@@ -3774,8 +3791,11 @@ function settleBet(id, status) {
 
 /* ---------------- official result settlement ----------------
    埋め込み済みの公式結果（確定着順・払戻）があるレースの購入記録は、
-   着順と照合して的中判定と払戻を自動で下書きする。保存は従来どおり
-   利用者の確認後（編集画面で保存）に行う。 */
+   着順と照合して的中判定と払戻を計算する（computeOfficialSettlement）。
+   起動時（autoSettleBets）は「未確定」の記録だけを対象に自動で精算し、
+   精算済みの記録や買い目・金額・メモ等の内容には一切触れない。
+   一覧の「公式結果で精算」ボタンは手動用フォールバックとして残し、
+   そちらは従来どおり下書きを編集画面で開いて確認後に保存する。 */
 function officialResultFor(bet) {
   const list = (window.__DATA__ && window.__DATA__.officialResults) || [];
   return list.find((o) => o.raceId === bet.raceId) || null;
@@ -3818,6 +3838,27 @@ function settleBetOfficial(id) {
   openBetEditor({ bet: { ...b, status: res.status, payout: res.payout } });
   $("bet-modal-race").textContent = `${b.raceName}（${(b.raceDate || "").replace(/-/g, "/")}）／${res.note}`;
 }
+/* 起動時の自動精算：公式結果が埋め込まれているレースの「未確定」記録だけを、
+   手動の「公式結果で精算」と同一ロジックで精算する。触るのは状態・払戻と
+   自動精算の印（autoSettled／autoSettledAt）だけで、精算済みレコードと
+   買い目・金額・メモ等の内容は書き換えない。 */
+function autoSettleBets() {
+  const list = loadBets();
+  let changed = 0;
+  const stamp = new Date().toISOString();
+  const next = list.map((b) => {
+    if (!b || b.status !== "unsettled") return b;
+    const off = officialResultFor(b); if (!off) return b;
+    const res = computeOfficialSettlement(b, off);
+    changed += 1;
+    return { ...b, status: res.status, payout: res.payout, autoSettled: true, autoSettledAt: stamp };
+  });
+  if (changed > 0) {
+    try { localStorage.setItem(BETS_KEY, JSON.stringify(next)); } catch { /* 保存できなくても表示は続行する */ }
+    lastAutoSettledCount = changed;
+  }
+  return changed;
+}
 
 /* ---------------- bet editor ---------------- */
 let editingId = null;
@@ -3854,8 +3895,11 @@ function openBetEditor(opts = {}) {
   editingId = bet ? bet.id : null;
   selectedNums = [];
   $("bet-modal-title").textContent = bet ? "購入記録を編集" : "購入を記録";
-  $("bet-modal-race").textContent = `${S.race.name}（${S.race.raceDate.replace(/-/g, "/")} 京都${S.race.raceNumber}R）`;
+  $("bet-modal-race").textContent = bet
+    ? `${bet.raceName || S.race.name}（${(bet.raceDate || S.race.raceDate).replace(/-/g, "/")}）`
+    : `${S.race.name}（${S.race.raceDate.replace(/-/g, "/")} 京都${S.race.raceNumber}R）`;
   $("bf-delete").classList.toggle("hidden", !bet);
+  $("bf-delete").dataset.armed = ""; $("bf-delete").textContent = "削除";
   $("bf-error").classList.add("hidden");
   if (opts.prefillPick) {
     const p = opts.prefillPick;
@@ -3894,7 +3938,7 @@ $("bf-delete").addEventListener("click", (ev) => {
   if (editingId == null) return;
   const b = ev.currentTarget;
   if (b.dataset.armed) { saveBets(loadBets().filter((x) => x.id !== editingId)); closeBetEditor(); }
-  else { b.dataset.armed = "1"; b.textContent = "本当に削除"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "削除"; }, 3000); }
+  else { b.dataset.armed = "1"; b.textContent = "本当に削除しますか？"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "削除"; }, 3000); }
 });
 $("bf-save").addEventListener("click", () => {
   const type = $("bf-type").value, method = $("bf-method").value;
@@ -3922,6 +3966,7 @@ $("bf-save").addEventListener("click", () => {
   const list = loadBets();
   const old = editingId != null ? list.find((b) => b.id === editingId) : null;
   const row = {
+    ...(old || {}),
     id: editingId ?? (() => { let id = now * 1000; const used = new Set(list.map((b) => b.id)); while (used.has(id)) id += 1; return id; })(),
     raceId: old ? old.raceId : S.race.id, raceName: old ? old.raceName : S.race.name, raceDate: old ? old.raceDate : S.race.raceDate,
     label: $("bf-label").value.trim() || null, betType: type, method,
@@ -3970,6 +4015,7 @@ $("bets-import").addEventListener("change", (ev) => {
 /* ---------------- init ---------------- */
 renderPickSet();
 renderGoing();
+autoSettleBets();
 renderBets();
 </script>
     <script>
