@@ -1342,22 +1342,41 @@
   function clampScore(n) {
     return Math.max(0, Math.min(100, Math.round(n)));
   }
-  function computeAbility(results, rating, levelMap) {
+  function computeAbility(results, rating, levelMap, targetRaceDate) {
     const ratingVal = parseRatingValue(rating);
     const ratingScore = ratingVal != null ? clampScore((ratingVal - 100) * 4) : null;
-    const allScores = results.map((r) => correctedLevelScore(r, levelMap)).filter((s) => s != null).sort((a, b) => b - a);
-    const gradedScores = results.filter((r) => levelClass(r.grade) >= 4).map((r) => correctedLevelScore(r, levelMap)).filter((s) => s != null).sort((a, b) => b - a);
-    const basis = gradedScores.length > 0 ? gradedScores : allScores.map((s) => Math.round(s * 0.8));
-    const top = basis.slice(0, 3);
+    const decayedEntry = (r) => {
+      const base = correctedLevelScore(r, levelMap);
+      if (base == null)
+        return null;
+      if (!targetRaceDate)
+        return { score: base, factor: 1, ageMonths: null };
+      const days = daysBetween(isoDate(r.raceDate), isoDate(targetRaceDate));
+      const ageMonths = days / 30.4375;
+      const factor = ageMonths <= 6 ? 1 : Math.max(0.75, 1 - 0.01 * (ageMonths - 6));
+      return { score: Math.round(base * factor), factor, ageMonths };
+    };
+    const allEntries = results.map((r) => decayedEntry(r)).filter((e) => e != null).sort((a, b) => b.score - a.score);
+    const gradedEntries = results.filter((r) => levelClass(r.grade) >= 4).map((r) => decayedEntry(r)).filter((e) => e != null).sort((a, b) => b.score - a.score);
+    const basisEntries = gradedEntries.length > 0 ? gradedEntries : allEntries.map((e) => ({ score: Math.round(e.score * 0.8), factor: e.factor, ageMonths: e.ageMonths }));
+    const topEntries = basisEntries.slice(0, 3);
+    const top = topEntries.map((e) => e.score);
     const levelBest = top.length ? Math.round(top.reduce((x, y) => x + y, 0) / top.length) : null;
-    const bestRun = basis[0] ?? null;
+    const bestRun = basisEntries[0]?.score ?? null;
     let score = null;
     if (ratingScore != null && levelBest != null && bestRun != null) {
       score = clampScore(ratingScore * 0.5 + levelBest * 0.35 + bestRun * 0.15);
     } else if (levelBest != null && bestRun != null) {
       score = clampScore(levelBest * 0.7 + bestRun * 0.3);
     }
-    const detail = `レーティング ${ratingVal ?? "未公表"}${ratingScore != null ? `（${ratingScore}点換算）` : ""}` + `／${gradedScores.length > 0 ? "重賞" : "全成績（割引）"}レベル補正 上位3走平均 ${levelBest ?? "—"}点` + `／ベストラン ${bestRun ?? "—"}点`;
+    let detail = `レーティング ${ratingVal ?? "未公表"}${ratingScore != null ? `（${ratingScore}点換算）` : ""}` + `／${gradedEntries.length > 0 ? "重賞" : "全成績（割引）"}レベル補正 上位3走平均 ${levelBest ?? "—"}点` + `／ベストラン ${bestRun ?? "—"}点`;
+    const discounted = topEntries.filter((e) => e.factor != null && e.factor < 1);
+    if (discounted.length > 0) {
+      const oldest = discounted.reduce((a, b) => (b.ageMonths != null && a.ageMonths != null && b.ageMonths > a.ageMonths ? b : a), discounted[0]);
+      if (oldest.ageMonths != null) {
+        detail += `／経過割引：上位走に${Math.round(oldest.ageMonths)}か月前の走りを含み係数${oldest.factor.toFixed(2)}で割り引き（6か月以内は満額、以降1%/月・下限0.75）`;
+      }
+    }
     return { score, detail, ratingScore, levelBest, bestRun };
   }
   function computeRecentQuality(resultsDesc, levelMap) {
@@ -1651,7 +1670,7 @@
       const results = resultsByHorse.get(e.horseId) ?? [];
       const resultsDesc = [...results].sort((a, b) => b.raceDate.localeCompare(a.raceDate));
       const mc = prepareMatchContext(results, race, levelMap);
-      const ability = computeAbility(results, e.rating, levelMap);
+      const ability = computeAbility(results, e.rating, levelMap, prevMode ? null : race.raceDate);
       const recent = computeRecentQuality(resultsDesc, levelMap);
       const state = computeState(e, resultsDesc, race);
       const jt = computeJockeyTrainer(e, horse, results, race, allResults, horseById);
@@ -3377,7 +3396,7 @@ function renderBasis() {
     <p class="small">坂は「ゴール前の上り坂／途中の下り坂（淀の坂型）／平坦」に分け、同タイプのコースでの成績で判定します。京都1600m外回りは「下りの淀の坂＋平坦な直線」として扱い、脚質軸には下りで流れが速くなる分岐を持ちます。</p>
     <h3>総合評価の内訳（プロの見方に沿った階層）</h3>
     <p class="small">総合評価は100点満点（旧称：プロ評価）。まず「能力」で土台を固め、「条件適性」と「展開・枠」で補正し、「近走内容」と「状態」で最終確認する、という階層で計算します。各層の意味は次のとおりです。<br>
-    <b>能力39点</b>：馬そのものの地力。レーティングと、過去に走ったレースのレベルで判定します。レーティング換算は（レーティング−100）×4 を0〜100にクランプし、レーティング100を0点・125を100点として換算します（100＝重賞級の入口、125＝世界トップ級）。能力点はこのレーティング換算×0.5＋レベル補正・上位3走平均×0.35＋ベストラン×0.15で合成します。<br>
+    <b>能力39点</b>：馬そのものの地力。レーティングと、過去に走ったレースのレベルで判定します。レーティング換算は（レーティング−100）×4 を0〜100にクランプし、レーティング100を0点・125を100点として換算します（100＝重賞級の入口、125＝世界トップ級）。能力点はこのレーティング換算×0.5＋レベル補正・上位3走平均×0.35＋ベストラン×0.15で合成します。レベル補正の材料になる各走には経過割引を適用します：対象レース日から6か月以内なら満額、それより古い走りは1か月あたり1%ずつ・下限75%まで割り引きます。能力は地力を見る層なので割り引きは緩やかにとどめ、直近の調子は近走内容・状態の層が別に見る、という趣旨です。<br>
     <b>条件適性24点</b>：今回の馬場状態・競馬場・距離・芝かダートかへの向き不向き。コース特性との相性（特性フィット）も少し加味します。<br>
     <b>展開・枠14点</b>：脚質とレースの流れの合い方、枠順の有利・不利。<br>
     <b>近走内容10点</b>：最近のレース内容の良し悪し。着順だけでなく、相手の強さや着差まで見ます。<br>
