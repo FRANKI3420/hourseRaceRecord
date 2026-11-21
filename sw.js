@@ -1,4 +1,4 @@
-const CACHE = 'keiba-github-v1';
+const CACHE = 'keiba-github-v2';
 const CORE = ['./', './index.html', './assets/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -18,10 +18,27 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  const isDocument = req.mode === 'navigate' || req.destination === 'document' ||
+    url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+  if (isDocument && url.origin === self.location.origin) {
+    // 画面（HTML）はネットワーク優先：新しい版が公開されたら古いキャッシュを
+    // 表示し続けない。オフライン時のみキャッシュを使う。
+    event.respondWith(
+      fetch(req).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req, { ignoreSearch: true }))
+    );
+    return;
+  }
   event.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => {
       const network = fetch(req).then((res) => {
-        if (res && res.ok && new URL(req.url).origin === self.location.origin) {
+        if (res && res.ok && url.origin === self.location.origin) {
           const copy = res.clone();
           caches.open(CACHE).then((cache) => cache.put(req, copy));
         }
