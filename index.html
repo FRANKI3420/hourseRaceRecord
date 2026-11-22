@@ -264,7 +264,7 @@
 
         <section class="card">
           <h2>注目馬トップ5 <span class="small muted" id="top5-sub"></span></h2>
-          <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点。人気やオッズは点数に入れていない</p>
+          <p class="small muted" style="margin:-4px 0 10px">能力を土台に、適性・展開・状態で補正した総合点に、相対斤量の補正（出走馬の平均斤量との差×0.75、上限±2点）を含みます。人気やオッズは点数に入れていない</p>
           <p class="small" style="margin:-4px 0 10px">各カードは左が<strong>総合評価（順位・点数）</strong>、右が<strong>市場（何番人気・単勝オッズ）</strong>。下の帯が順位のズレで、<span class="gappill value-big">＋ 妙味</span> は評価が市場より上、<span class="gappill over-big">− 過剰人気</span> は市場が評価より上です。順位差が5以上ある馬は理由を下に明示します。馬場シナリオが稍重以上で、その馬場が未経験の馬は点数を幅（レンジ）で併記し「道悪未経験のため不確実」と明記します（選んだ馬・選ばなかった馬を問わず全頭に同じ基準）。当該競馬場（今回は京都）での出走経験がない馬も同格で、「中立」ではなく不確実性として幅（レンジ）を併記し「コース未経験のため不確実」と明記したうえで、本スコアにはレンジの最大値を採用します。</p>
           <div class="top5" id="top5"></div>
         </section>
@@ -297,7 +297,7 @@
             <table class="cmp" id="cmp-table">
               <thead><tr>
                 <th class="l">馬</th><th>総合評価</th><th>市場人気</th><th>単勝</th><th>評価とのズレ</th><th class="sub2">条件マッチ</th>
-                <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th><th class="opt">騎手・調教師</th>
+                <th class="opt">能力</th><th class="opt">適性</th><th class="opt">展開・枠</th><th class="opt">近走</th><th class="opt">状態</th><th class="opt">騎手・調教師</th><th class="opt">斤量補正</th>
                 <th class="sub2">特性フィット</th>
               </tr></thead>
               <tbody id="cmp-body"></tbody>
@@ -1662,6 +1662,17 @@
       return s === "逃げ" || s === "先行";
     }).length;
     const allResults = [...resultsByHorse.values()].flat();
+    // 相対斤量の補正（2026-11-22 本人決定・現行方式のみ）：出走馬（取消・除外を除く）の
+    // 平均斤量との差×0.75 を小数第1位に丸め、±2点にクランプした値を、6層合成後の
+    // 総合評価へ独立して加算する。理論換算の半分程度に抑えるのは、レーティング側に
+    // 斤量の影響が一部織り込み済みで二重計算を避けるため。直前方式（prev）には適用しない。
+    const wList = active.filter((x) => x.weightCarried != null).map((x) => x.weightCarried);
+    const wAvg = wList.length ? wList.reduce((s, w) => s + w, 0) / wList.length : null;
+    const weightAdjOf = (e) => {
+      if (prevMode || wAvg == null || e.weightCarried == null)
+        return 0;
+      return Math.round(Math.max(-2, Math.min(2, (wAvg - e.weightCarried) * 0.75)) * 10) / 10;
+    };
     const out = new Map;
     for (const e of entryRows) {
       const horse = horseById.get(e.horseId);
@@ -1700,7 +1711,8 @@
         }
         // 総合評価の層配分：現行方式は能力0.43／条件適性0.20／展開・枠0.12／近走0.10／状態0.10／騎手・調教師0.05。
         // 直前方式（prev）は従来の再現性を維持するため、展開・枠0.14／騎手・調教師0.03のまま据え置く。
-        const total = ability.score != null && condition.score != null && paceFrame.score != null && recent.score != null && state.score != null ? clampScore(ability.score * 0.43 + condition.score * 0.20 + paceFrame.score * (prevMode ? 0.14 : 0.12) + recent.score * 0.1 + state.score * 0.1 + jt.score * (prevMode ? 0.03 : 0.05)) : null;
+        const baseTotal = ability.score != null && condition.score != null && paceFrame.score != null && recent.score != null && state.score != null ? ability.score * 0.43 + condition.score * 0.20 + paceFrame.score * (prevMode ? 0.14 : 0.12) + recent.score * 0.1 + state.score * 0.1 + jt.score * (prevMode ? 0.03 : 0.05) : null;
+        const total = baseTotal != null ? clampScore(baseTotal + weightAdjOf(e)) : null;
         perGoing[g] = {
           total,
           rank: null,
@@ -3104,6 +3116,17 @@ const AXIS_VAL = { good: 1, ok: 0.6, poor: 0.25, untested: 0.5, info: 0.5 };
 const MATCH_AXIS_W = { course: 10, distance: 10, surface: 10, level: 35, going: 15, direction: 5, hill: 5, pace: 10 };
 const COND_AXIS_W = { course: 10, distance: 10, surface: 10, going: 15, direction: 5, hill: 5 };
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(n)));
+/* ---------------- 相対斤量の補正（2026-11-22 本人決定・現行方式のみ） ----------------
+   補正点 ＝ clamp（（出走馬の平均斤量 − その馬の斤量） × 0.75, −2, ＋2）を小数第1位に
+   丸めた値。6層合成後の総合評価に独立して加算する（層配分・層内部の式は変更しない）。
+   点推定・道悪レンジ・コースレンジのすべてに同じ補正値を加える。旧方式・直前方式の
+   ベースラインには適用しない。スナップショット側の総合計算と同一式・同一値にする。 */
+const WEIGHT_AVG = (() => { const ws = S.entries.filter((e) => !e.scratched && e.weightCarried != null).map((e) => e.weightCarried); return ws.length ? ws.reduce((s, w) => s + w, 0) / ws.length : null; })();
+function weightAdj(e) {
+  if (WEIGHT_AVG == null || !e || e.weightCarried == null) return 0;
+  return Math.round(Math.max(-2, Math.min(2, (WEIGHT_AVG - e.weightCarried) * 0.75)) * 10) / 10;
+}
+function fmtWeightAdj(e) { const v = weightAdj(e); return v === 0 ? "±0.0" : (v > 0 ? "+" : "") + v.toFixed(1); }
 function scoreFromAxes(axes, wmap) {
   let num = 0, den = 0;
   for (const a of axes) { const w = wmap[a.key]; if (w == null) continue; num += w * (AXIS_VAL[a.status] ?? 0.5); den += w; }
@@ -3127,7 +3150,7 @@ function wetUncertainty(e) {
   const totalOf = (cond) => {
     const a = e.proShared.ability.score, pf = e.proShared.paceFrame.score, rc = e.proShared.recent.score, st2 = e.proShared.state.score, jt = e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null;
     if (a == null || cond == null || pf == null || rc == null || st2 == null || jt == null) return null;
-    return clamp100(a * 0.43 + cond * 0.20 + pf * 0.12 + rc * 0.1 + st2 * 0.1 + jt * 0.05);
+    return clamp100(a * 0.43 + cond * 0.20 + pf * 0.12 + rc * 0.1 + st2 * 0.1 + jt * 0.05 + weightAdj(e));
   };
   const totalLo0 = totalOf(condOf("poor"));
   const curTotal = e.pro[going].total;
@@ -3157,7 +3180,7 @@ function scoreFromAxesWith(axes, wmap, key, val) {
 function totalFromCond(e, cond) {
   const a = e.proShared.ability.score, pf = e.proShared.paceFrame.score, rc = e.proShared.recent.score, st2 = e.proShared.state.score, jt = e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null;
   if (a == null || cond == null || pf == null || rc == null || st2 == null || jt == null) return null;
-  return clamp100(a * 0.43 + cond * 0.20 + pf * 0.12 + rc * 0.1 + st2 * 0.1 + jt * 0.05);
+  return clamp100(a * 0.43 + cond * 0.20 + pf * 0.12 + rc * 0.1 + st2 * 0.1 + jt * 0.05 + weightAdj(e));
 }
 function courseUncertainty(e) {
   const m = e.matches[going];
@@ -3292,6 +3315,7 @@ function renderTop5() {
       ${layerBar("近走内容", e.proShared.recent.score)}
       ${layerBar("状態", e.proShared.state.score)}
       ${layerBar("騎手・調教師", e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score : null)}
+      <div class="layerline"><span>斤量補正</span><b>${fmtWeightAdj(e)}</b></div>
     </button>`;
   }).join("");
 }
@@ -3321,14 +3345,16 @@ function renderCmp() {
       <td class="opt">${e.proShared.recent.score ?? "—"}</td>
       <td class="opt">${e.proShared.state.score ?? "—"}</td>
       <td class="opt">${e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score ?? "—" : "—"}</td>
+      <td class="opt">${fmtWeightAdj(e)}</td>
       <td class="sub2">${p.traitFit ? p.traitFit.score ?? "—" : "—"}</td>
     </tr>`;
   }).join("");
 }
 /* 斤量の確認（マイルCSモデル反省 2026-11-21、本家と同一仕様）：各馬の斤量・
    全頭平均・最軽量／最重量を、最終チェックと買い目候補の近くで目視確認する
-   ための表示専用ブロック。総合評価には一切入れない（斤量の前走比は状態層で
-   点数化済みで、絶対量まで入れると二重計上になるため）。 */
+   ためのブロック。2026-11-22の本人決定で、相対斤量の補正（平均との差×0.75、
+   上限±2点）を総合評価に加えるようになったため、各馬の補正値も併記する。
+   斤量の前走比は従来どおり状態層で点数化している。 */
 function renderWeightCheck() {
   const el = $("weight-check");
   if (!el) return;
@@ -3352,14 +3378,15 @@ function renderWeightCheck() {
   };
   el.innerHTML = `
     <h2>斤量の確認（表示のみ）</h2>
-    <p class="small muted">全${rows.length}頭の平均 ${avg.toFixed(1)}kg ／ 最軽量 ${fmtW(minW)}kg（${lightest.map((r) => esc(r.e.horse.name)).join("、")}）／ 最重量 ${fmtW(maxW)}kg（${heaviest.map((r) => esc(r.e.horse.name)).join("、")}）${maxW > minW ? ` ／ 最軽量は最重量より${fmtW(maxW - minW)}kg軽い` : ""}。斤量の前走比は状態層で点数化済みのため、二重計上を避けてこの確認は総合評価には入れていません。</p>
+    <p class="small muted">全${rows.length}頭の平均 ${avg.toFixed(1)}kg ／ 最軽量 ${fmtW(minW)}kg（${lightest.map((r) => esc(r.e.horse.name)).join("、")}）／ 最重量 ${fmtW(maxW)}kg（${heaviest.map((r) => esc(r.e.horse.name)).join("、")}）${maxW > minW ? ` ／ 最軽量は最重量より${fmtW(maxW - minW)}kg軽い` : ""}。斤量の前走比は状態層で点数化済みです。これとは別に、2026-11-22の決定で相対斤量の補正（平均との差×0.75、上限±2点・小数第1位）を6層合成後の総合評価に加えており、各馬の補正値は右端の列とスコアの内訳に表示しています（式と理由は「評価の根拠」の斤量補正の項）。</p>
     <div class="tblwrap"><table class="wgt-tbl">
-      <thead><tr><th class="l">馬番</th><th class="nm">馬名（性齢）</th><th>斤量</th><th>最重量との差</th></tr></thead>
+      <thead><tr><th class="l">馬番</th><th class="nm">馬名（性齢）</th><th>斤量</th><th>最重量との差</th><th>斤量補正</th></tr></thead>
       <tbody>${rows.map(({ e, w }) => `
         <tr><td class="l"><span class="wb f${e.frame}">${e.horseNumber}</span></td>
         <td class="nm"><b>${esc(e.horse.name)}</b>${sexAge(e) ? `<span class="small muted">（${esc(sexAge(e))}）</span>` : ""}${w === minW ? `<span class="wgt-badge min">最軽量</span>` : ""}${w === maxW && maxW > minW ? `<span class="wgt-badge max">最重量</span>` : ""}</td>
         <td class="scorecell">${fmtW(w)}kg</td>
-        <td>${w === maxW ? "—" : `−${fmtW(maxW - w)}kg`}</td></tr>`).join("")}
+        <td>${w === maxW ? "—" : `−${fmtW(maxW - w)}kg`}</td>
+        <td class="scorecell">${fmtWeightAdj(e)}</td></tr>`).join("")}
       </tbody></table></div>`;
 }
 function renderPickSet() {
@@ -3429,6 +3456,8 @@ function renderBasis() {
     ${courseCloseCallHtml()}
     <h3>市場とのズレの理由</h3>
     <p class="small">総合評価の順位と市場人気の差が5以上ある馬は、比較表の下に「市場と大きくずれる馬」として、どの層が点数を押し上げ／押し下げているかを文章で明示します。人気上位（5番人気以内）なのに買い目候補に入っていない馬には、候補から外れた理由を買い目候補の欄に必ず併記します。</p>
+    <h3>斤量補正（相対斤量・2026-11-22 本人決定）</h3>
+    <p class="small">6層（能力43／条件適性20／展開・枠12／近走10／状態10／騎手・調教師5）の合成後の総合評価に、独立した補正として加えます。層配分と層内部の計算式は変えていません。補正点＝clamp（（そのレースの出走馬の平均斤量−その馬の斤量）×0.75、−2、＋2）で、小数第1位までを使います。平均斤量は取消・除外を除く出走馬の斤量の平均です。軽い馬にプラス、重い馬にマイナスで、コース未経験のレンジ（点推定・下限・上限）にも同じ補正値を加え、順位付けは補正後の総合評価で行います。換算を理論値の半分程度に抑え、上限を±2点としたのは、レーティング側に斤量の影響が一部織り込み済みで、二重計算を避けるためです。根拠は2026-11-15のエリザベス女王杯で、54kgの3歳牝馬が1着・4着に入り、斤量差が着差を上回っていたことです。今回のマイルチャンピオンシップでは平均斤量57.33kgに対し、55kg→+1.8／56kg→+1.0／57kg→+0.3／58kg→−0.5です。旧方式・直前方式のベースラインには適用せず、再現性は従来どおり維持します。オッズ・人気は従来どおり点数に入れません。</p>
     <h3>方式の比較（馬場：${going}）</h3>
     <div class="tblwrap"><table class="basis-tbl">
       <thead><tr><th class="l">馬</th><th class="opt">条件マッチ・旧方式</th><th>条件マッチ・直前方式</th><th>条件マッチ・現在</th><th class="opt">総合評価・直前方式</th><th>総合評価・現在</th></tr></thead>
@@ -3573,6 +3602,7 @@ function openHorse(id) {
       <p class="small"><b>近走内容 ${e.proShared.recent.score ?? "—"}：</b>${esc(e.proShared.recent.detail)}</p>
       <p class="small"><b>状態 ${e.proShared.state.score ?? "—"}：</b>${esc(e.proShared.state.detail)}</p>
       <p class="small"><b>騎手・調教師 ${e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.score ?? "—" : "—"}：</b>${esc(e.proShared.jockeyTrainer ? e.proShared.jockeyTrainer.detail : "")}</p>
+      <p class="small"><b>斤量補正 ${fmtWeightAdj(e)}：</b>負担斤量${e.weightCarried ?? "—"}kg。出走馬の平均斤量${WEIGHT_AVG != null ? WEIGHT_AVG.toFixed(2) : "—"}kgとの差×0.75（上限±2点）を、6層合成後の総合評価に加算しています（2026-11-22決定）。</p>
       <h3>条件マッチの軸別判定（馬場：${going}）</h3>
       ${axes}${risks}
     </div>
